@@ -1,0 +1,17 @@
+.env
+.env.*
+.git
+.venv*
+__pycache__
+**/__pycache__
+.pytest_cache
+logs
+*_capture*
+actual_market_research_*
+timeframe_research_*
+late_entries_*
+signal_extensions_*
+backtest_results*
+research_audit_*
+*.sqlite3*
+*calibration.json

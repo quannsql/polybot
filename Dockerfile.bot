@@ -1,0 +1,11 @@
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY requirements-paper.txt ./
+RUN pip install --no-cache-dir -r requirements-paper.txt
+COPY polymarket_bot ./polymarket_bot
+COPY *.py ./
+COPY trial_30usd.json ./
+# Bot research runtime, NOT live execution. Bounded $30 paper capture.
+# No private keys or live SDK required. Set Railway restart policy Never.
+CMD ["python", "-B", "collect_advanced_paper.py", "--duration-seconds", "3600", "--budget-usd", "30", "--output-dir", "/app/paper_market_capture_railway"]

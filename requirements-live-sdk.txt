@@ -1,0 +1,2 @@
+# SDK installation alone does NOT enable live trading.
+polymarket-client==0.10.0

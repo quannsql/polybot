@@ -1,0 +1,10 @@
+{
+  "approved": false,
+  "signal_policy": "boundary",
+  "method": "walk_forward_polymarket_resolution_calibration",
+  "probability_by_source": {
+    "main_5m": {"up": 0.5, "down": 0.5},
+    "aux_short_15m": {"up": 0.5, "down": 0.5}
+  },
+  "notes": "Do not set approved=true until OOS labels use the exact Chainlink rules and historical CLOB ask/fill data."
+}

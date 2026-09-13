@@ -1,0 +1,6 @@
+# Public-only preparation and paper capture; no signing dependency in Docker.
+httpx==0.28.1
+numpy==1.26.4
+pandas==3.0.3
+python-dotenv==1.2.2
+websockets==15.0.1

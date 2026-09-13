@@ -1,0 +1,20 @@
+{
+  "schema": "polybot_trial_v1",
+  "execution_mode": "disabled",
+  "stake_usd_including_fee": 30,
+  "canary_max_new_orders": 1,
+  "canary_max_open_exposure_usd": 30,
+  "canary_stop_after_loss_usd": 30,
+  "strategy": "dca_direction_plus_verified_oracle_edge",
+  "min_edge_per_share": 0.02,
+  "max_spread": 0.03,
+  "live_prerequisites": [
+    "user_and_account_eligibility_verified",
+    "actual_server_geoblock_passed",
+    "wallet_type_signer_and_funding_verified",
+    "verified_current_price_to_beat",
+    "forward_calibration_approved",
+    "price_capped_execution_and_fill_reconciliation_tested"
+  ],
+  "note": "Preparation profile, NOT consumed as permission to submit orders. One $30 canary only after explicit activation and completed checks."
+}
