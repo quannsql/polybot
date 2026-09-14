@@ -367,8 +367,23 @@ class BotEngine:
                 # Warm the persistent 28-day cache before an entry window begins.
                 # A failed warmup is fatal in live mode; there is no Binance fallback.
                 await self.feed.refresh(datetime.now(timezone.utc))
+            heartbeat_at = 0.0
+            self.store.log("bot_started", {
+                "mode": self.settings.mode,
+                "strategy": self.settings.execution_strategy,
+                "entry_seconds": self.settings.decision_delay_seconds,
+                "stake_usd": self.settings.live_fixed_stake_usd,
+                "bankroll_usd": self.settings.bankroll_usd,
+                "max_live_orders": self.settings.live_max_orders,
+            })
             while True:
                 try:
+                    if time.monotonic() >= heartbeat_at:
+                        self.store.log("bot_heartbeat", {
+                            "mode": self.settings.mode,
+                            "strategy": self.settings.execution_strategy,
+                        })
+                        heartbeat_at = time.monotonic() + 60
                     await self.run_once()
                 except Exception:
                     logger.exception("bot tick failed; retrying")
