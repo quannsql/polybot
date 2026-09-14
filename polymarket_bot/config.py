@@ -48,6 +48,7 @@ class Settings:
     history_5m_bars: int = 240
     data_source: str = "binance"
     execution_strategy: str = "calibrated_edge"
+    entry_gate_profile: str = "none"
     router_sma_days: int = 25
     router_short_depth_pct: float = 1.5
     short_lane_run_bps: float = 60.0
@@ -96,6 +97,7 @@ class Settings:
             aux_enabled=_flag('POLYMARKET_AUX_ENABLED', True),
             history_5m_bars=max(80, _int("POLYMARKET_HISTORY_5M_BARS", 240)),
             data_source=os.getenv("POLYMARKET_DATA_SOURCE", "binance").strip().lower(),
+            entry_gate_profile=os.getenv("POLYMARKET_ENTRY_GATE_PROFILE", "none").strip(),
             execution_strategy=os.getenv(
                 "POLYMARKET_EXECUTION_STRATEGY", "calibrated_edge"
             ).strip().lower(),
@@ -149,6 +151,13 @@ class Settings:
             raise ValueError("POLYMARKET_DATA_SOURCE must be binance or lighter")
         if self.execution_strategy not in {"calibrated_edge", "legacy_1230_ref85"}:
             raise ValueError("Unknown POLYMARKET_EXECUTION_STRATEGY")
+        if self.entry_gate_profile not in {"none", "q1.5_z1.25_memory_old_signal_aux_shock"}:
+            raise ValueError("Unknown POLYMARKET_ENTRY_GATE_PROFILE")
+        if self.entry_gate_profile != "none" and (
+            self.execution_strategy != "legacy_1230_ref85" or self.data_source != "lighter"
+            or self.signal_policy != "latest_5m" or self.decision_delay_seconds != 750
+        ):
+            raise ValueError("Strong gate requires legacy 12:30 Lighter latest_5m profile")
         if self.history_5m_bars < 80:
             raise ValueError("history_5m_bars must be at least 80")
         if self.max_stake_usd > self.bankroll_usd:

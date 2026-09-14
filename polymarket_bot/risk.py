@@ -59,6 +59,8 @@ class RiskEngine:
         }
         if any(self.calibration.get(key) != value for key, value in expected.items()):
             return None
+        if self.calibration.get("entry_gate_profile", "none") != self.settings.entry_gate_profile:
+            return None
         table = self.calibration.get("descriptive_win_rate_by_source")
         if not isinstance(table, dict):
             return None

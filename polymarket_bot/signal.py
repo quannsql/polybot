@@ -58,4 +58,6 @@ def snapshot(frame_5m: pd.DataFrame, *, decision_at: datetime | pd.Timestamp,
             reason += f";signal_at={row.signal_at.isoformat()};age_min={row.signal_age_minutes:g}"
     return SignalSnapshot(at.to_pydatetime(), route, direction, source, strength,
                           num("close"), num("lower5"), num("upper5"), num("close15"),
-                          num("upper15"), num("run60"), reason)
+                          num("upper15"), num("run60"), reason,
+                          None if selected.empty else row.signal_at.to_pydatetime(),
+                          None if selected.empty else float(row.signal_age_minutes))

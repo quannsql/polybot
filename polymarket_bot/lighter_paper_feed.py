@@ -106,7 +106,11 @@ class LighterPaperFeed:
 class LighterFeed:
     """Persistent public Lighter source for the audited legacy live signal."""
 
-    def __init__(self, cache_path: Path, timeout: float = 10.0):
+    def __init__(self, cache_path: Path, timeout: float = 10.0, *, symbol: str = 'BTC', history_days: int = 28):
+        if symbol not in {'BTC', 'ETH'}:
+            raise ValueError('Unsupported gate feed symbol')
+        self.symbol, self.history_days = symbol, history_days
+        self.market_id = None
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(cache_path)
         self.db.execute(
@@ -127,19 +131,22 @@ class LighterFeed:
 
     async def refresh(self, at):
         stop = int(pd.Timestamp(at).timestamp()) // 60 * 60
-        first = stop // 86400 * 86400 - 28 * 86400
+        first = stop // 86400 * 86400 - self.history_days * 86400
         if not self.verified:
             body = await self._get('/orderBookDetails')
             matches = [r for r in body.get('order_book_details', [])
-                       if r.get('market_id') == 1 and r.get('symbol') == 'BTC']
+                       if r.get('symbol') == self.symbol]
             if len(matches) != 1:
-                raise ValueError('Lighter BTC market identity unverified')
+                raise ValueError('Lighter market identity unverified')
+            self.market_id = int(matches[0]['market_id'])
+            if self.symbol == 'BTC' and self.market_id != 1:
+                raise ValueError('Unexpected BTC market identity')
             self.verified = True
         last = self.db.execute('SELECT MAX(ts) FROM minutes').fetchone()[0]
         begin = max(first, last - 600) if last is not None else first
 
         async def chunk(lo, hi):
-            body = await self._get('/candles', market_id=1, resolution='1m',
+            body = await self._get('/candles', market_id=self.market_id, resolution='1m',
                 start_timestamp=lo, end_timestamp=hi-1, count_back=(hi-lo)//60,
                 set_timestamp_to_end='false')
             if body.get('code') != 200 or body.get('r') != '1m':
@@ -176,6 +183,14 @@ class LighterFeed:
         frame['timestamp'] = pd.to_datetime(frame.timestamp, unit='s', utc=True)
         bars, daily = aggregate_minutes(frame, pd.Timestamp(stop, unit='s', tz='UTC'))
         return bars.tail(240).reset_index(drop=True), daily
+
+    def gate_minutes(self, at):
+        stop = int(pd.Timestamp(at).timestamp()) // 60 * 60
+        rows = self.db.execute('SELECT ts,open,high,low,close,volume FROM minutes '
+                              'WHERE ts>=? AND ts<? ORDER BY ts', (stop-4*86400, stop)).fetchall()
+        frame = pd.DataFrame(rows, columns=['timestamp', *COLS])
+        frame['timestamp'] = pd.to_datetime(frame.timestamp, unit='s', utc=True)
+        return frame
 
     async def close(self):
         await self.client.aclose()

@@ -60,6 +60,8 @@ class SignalSnapshot:
     upper_15m: float | None
     run_60m_bps: float | None
     reason: str
+    signal_at: datetime | None = None
+    signal_age_minutes: float | None = None
 
 
 @dataclass(frozen=True)

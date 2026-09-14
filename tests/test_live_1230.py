@@ -20,6 +20,7 @@ def live_settings(**changes):
         signer_private_key='fake', wallet_address='0x'+'1'*40,
         relayer_api_key='key', relayer_api_key_address='0x'+'2'*40,
         execution_strategy='legacy_1230_ref85', data_source='lighter',
+        entry_gate_profile='q1.5_z1.25_memory_old_signal_aux_shock',
         signal_policy='latest_5m', decision_delay_seconds=750,
         max_entry_delay_seconds=755, session_start_utc=0, session_end_utc=0,
         min_entry_price=.85, reference_max_age_seconds=75,
@@ -36,6 +37,7 @@ def approval():
         'approved': True, 'strategy_id': 'dca_legacy_1230_ref85_v1',
         'signal_policy': 'latest_5m', 'signal_source': 'lighter_1m_resampled',
         'entry_seconds': 750, 'stake_usd': 20, 'bankroll_usd': 50,
+        'entry_gate_profile': 'q1.5_z1.25_memory_old_signal_aux_shock',
         'descriptive_win_rate_by_source': {'main_5m': {'up': .9775}},
     }
 
@@ -67,9 +69,10 @@ def test_exact_live_1230_profile_and_twenty_dollar_size():
 @pytest.mark.parametrize('change', [
     {'decision_delay_seconds': 749}, {'live_fixed_stake_usd': 21},
     {'bankroll_usd': 49}, {'data_source': 'binance'},
+    {'entry_gate_profile': 'bad'},
 ])
 def test_live_1230_profile_drift_fails_closed(change):
-    with pytest.raises(ValueError, match='exact legacy'):
+    with pytest.raises(ValueError, match='legacy|ENTRY_GATE'):
         live_settings(**change).validate()
 
 

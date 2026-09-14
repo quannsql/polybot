@@ -17,6 +17,7 @@ from .paper_store import StateStore
 from .polymarket_api import MarketUnavailable, PolymarketLiveExecutor, PolymarketPublic
 from .risk import RiskEngine
 from .signal import snapshot
+from .entry_gates import PROFILE as STRONG_GATE_PROFILE, evaluate as evaluate_entry_gate
 
 logger = logging.getLogger("polymarket_bot")
 
@@ -28,6 +29,11 @@ class BotEngine:
             LighterFeed(settings.state_path.parent / "lighter_minutes.sqlite3")
             if settings.data_source == "lighter"
             else BinanceFeed(settings.binance_url)
+        )
+        self.peer_feed = (
+            LighterFeed(settings.state_path.parent / "lighter_eth_minutes.sqlite3",
+                        symbol="ETH", history_days=4)
+            if settings.entry_gate_profile == STRONG_GATE_PROFILE else None
         )
         self.api = PolymarketPublic(settings)
         self.store = StateStore(settings.state_path, settings.decision_log_path)
@@ -80,7 +86,11 @@ class BotEngine:
 
         try:
             if isinstance(self.feed, LighterFeed):
-                frame_5m, daily = await self.feed.refresh(moment)
+                if self.peer_feed is not None:
+                    (frame_5m, daily), _ = await asyncio.gather(
+                        self.feed.refresh(moment), self.peer_feed.refresh(moment))
+                else:
+                    frame_5m, daily = await self.feed.refresh(moment)
             else:
                 frame_5m, daily = await asyncio.gather(
                     self.feed.history_5m(
@@ -111,6 +121,27 @@ class BotEngine:
         if signal.direction is None:
             self.store.mark_seen(market.slug)
             return event
+
+        if self.settings.entry_gate_profile == STRONG_GATE_PROFILE:
+            try:
+                gate = evaluate_entry_gate(
+                    self.feed.gate_minutes(start + timedelta(minutes=12)),
+                    self.peer_feed.gate_minutes(start + timedelta(minutes=12)),
+                    start=start, signal_at=signal.signal_at,
+                    side=signal.direction, source=signal.source,
+                )
+            except Exception as exc:
+                self.store.log("entry_gate_unavailable", {
+                    "slug": market.slug, "profile": STRONG_GATE_PROFILE,
+                    "error_type": type(exc).__name__, "error": str(exc),
+                })
+                logger.warning("strong entry gate unavailable for %s: %s", market.slug, exc)
+                return event
+            self.store.log("entry_gate", {"slug": market.slug, **gate})
+            event["entry_gate"] = gate
+            if not gate["keep"]:
+                self.store.mark_seen(market.slug)
+                return event
 
         try:
             await self.api.sync_clock()
@@ -366,11 +397,16 @@ class BotEngine:
             if isinstance(self.feed, LighterFeed):
                 # Warm the persistent 28-day cache before an entry window begins.
                 # A failed warmup is fatal in live mode; there is no Binance fallback.
-                await self.feed.refresh(datetime.now(timezone.utc))
+                if self.peer_feed is not None:
+                    await asyncio.gather(self.feed.refresh(datetime.now(timezone.utc)),
+                                         self.peer_feed.refresh(datetime.now(timezone.utc)))
+                else:
+                    await self.feed.refresh(datetime.now(timezone.utc))
             heartbeat_at = 0.0
             self.store.log("bot_started", {
                 "mode": self.settings.mode,
                 "strategy": self.settings.execution_strategy,
+                "entry_gate_profile": self.settings.entry_gate_profile,
                 "entry_seconds": self.settings.decision_delay_seconds,
                 "stake_usd": self.settings.live_fixed_stake_usd,
                 "bankroll_usd": self.settings.bankroll_usd,
@@ -382,6 +418,7 @@ class BotEngine:
                         self.store.log("bot_heartbeat", {
                             "mode": self.settings.mode,
                             "strategy": self.settings.execution_strategy,
+                            "entry_gate_profile": self.settings.entry_gate_profile,
                         })
                         heartbeat_at = time.monotonic() + 60
                     await self.run_once()
@@ -397,3 +434,5 @@ class BotEngine:
                 result = close()
                 if hasattr(result, "__await__"):
                     await result
+            if self.peer_feed is not None:
+                await self.peer_feed.close()

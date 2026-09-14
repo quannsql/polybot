@@ -1,6 +1,7 @@
 {
   "approved": true,
   "strategy_id": "dca_legacy_1230_ref85_v1",
+  "entry_gate_profile": "q1.5_z1.25_memory_old_signal_aux_shock",
   "signal_policy": "latest_5m",
   "signal_source": "lighter_1m_resampled",
   "entry_seconds": 750,
@@ -21,5 +22,5 @@
     "main_5m_down": {"wins": 115, "n": 119},
     "aux_short_15m_down": {"wins": 65, "n": 68}
   },
-  "limitations": "Not an independent forward calibration. Rates are descriptive and previously explored. Live rule uses the frozen >=0.85 historical reference and reference+1c price cap; it does not treat these rates as conditional model probabilities. One FOK canary only."
+  "limitations": "Not an independent forward calibration. Strong gate was selected retrospectively from previously explored data: 297/300 retained historical candidates, not a promised live rate. Live rule uses the frozen >=0.85 historical reference and reference+1c price cap; it does not treat these rates as conditional model probabilities. One FOK canary only."
 }
