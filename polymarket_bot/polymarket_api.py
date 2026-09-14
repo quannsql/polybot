@@ -92,6 +92,16 @@ class PolymarketPublic:
         result = await self._get(self.settings.geoblock_url)
         return result if isinstance(result, dict) else {"blocked": True, "reason": "invalid_response"}
 
+    async def price_history(self, token_id: str, start_ts: int, end_ts: int) -> list[dict]:
+        raw = await self._get(
+            f"{self.settings.clob_url}/prices-history",
+            market=token_id, startTs=start_ts, endTs=end_ts, fidelity=1,
+        )
+        history = raw.get("history") if isinstance(raw, dict) else None
+        if not isinstance(history, list):
+            raise MarketUnavailable("CLOB price history unavailable")
+        return history
+
     async def market_for_window(self, window_start: datetime | None = None) -> Market:
         start = self.window_start(window_start)
         slug = f"btc-updown-15m-{int(start.timestamp())}"
@@ -243,8 +253,11 @@ class PolymarketLiveExecutor:
     ) -> dict[str, Any]:
         if self.client is None:
             raise RuntimeError("Live executor is not connected")
-        if not Decimal("0") < stake_usd <= Decimal("30"):
-            raise RuntimeError("Live order must be greater than $0 and no more than $30")
+        configured_cap = min(Decimal("30"), Decimal(str(self.settings.max_stake_usd)))
+        if not Decimal("0") < stake_usd <= configured_cap:
+            raise RuntimeError(
+                f"Live order must be greater than $0 and no more than ${configured_cap}"
+            )
         if not Decimal("0") < max_price <= Decimal(str(self.settings.live_max_price)):
             raise RuntimeError("Live order price exceeds configured cap")
         await self.ensure_balance(stake_usd)

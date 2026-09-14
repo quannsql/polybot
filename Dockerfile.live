@@ -4,5 +4,5 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OCI_POLYBOT_USE_INSTANCE_METADA
 COPY requirements-paper.txt requirements-live-sdk.txt ./
 RUN pip install --no-cache-dir -r requirements-paper.txt -r requirements-live-sdk.txt
 COPY polymarket_bot ./polymarket_bot
-COPY run_bot.py verify_live_account.py ./
+COPY run_bot.py verify_live_account.py live_1230_strategy_approval.json ./
 CMD ["python", "-B", "run_bot.py"]

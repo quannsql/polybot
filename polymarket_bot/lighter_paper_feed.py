@@ -5,7 +5,11 @@ Daily closes are accepted only after all 288 five-minute bars are complete.
 """
 import asyncio
 import math
+from pathlib import Path
+import sqlite3
+import time
 
+import httpx
 import numpy as np
 import pandas as pd
 
@@ -97,3 +101,82 @@ class LighterPaperFeed:
         frame['timestamp']=pd.to_datetime(frame.timestamp,unit='s',utc=True)
         bars,daily=aggregate_minutes(frame,pd.Timestamp(stop,unit='s',tz='UTC'))
         return bars.tail(240).reset_index(drop=True), daily
+
+
+class LighterFeed:
+    """Persistent public Lighter source for the audited legacy live signal."""
+
+    def __init__(self, cache_path: Path, timeout: float = 10.0):
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(cache_path)
+        self.db.execute(
+            'CREATE TABLE IF NOT EXISTS minutes '
+            '(ts INTEGER PRIMARY KEY, open REAL, high REAL, low REAL, close REAL, volume REAL, received_ms INTEGER)'
+        )
+        self.db.commit()
+        self.client = httpx.AsyncClient(timeout=timeout, trust_env=False)
+        self.verified = False
+
+    async def _get(self, path, **params):
+        response = await self.client.get(BASE + path, params=params)
+        response.raise_for_status()
+        body = response.json()
+        if not isinstance(body, dict):
+            raise ValueError('Invalid Lighter response')
+        return body
+
+    async def refresh(self, at):
+        stop = int(pd.Timestamp(at).timestamp()) // 60 * 60
+        first = stop // 86400 * 86400 - 28 * 86400
+        if not self.verified:
+            body = await self._get('/orderBookDetails')
+            matches = [r for r in body.get('order_book_details', [])
+                       if r.get('market_id') == 1 and r.get('symbol') == 'BTC']
+            if len(matches) != 1:
+                raise ValueError('Lighter BTC market identity unverified')
+            self.verified = True
+        last = self.db.execute('SELECT MAX(ts) FROM minutes').fetchone()[0]
+        begin = max(first, last - 600) if last is not None else first
+
+        async def chunk(lo, hi):
+            body = await self._get('/candles', market_id=1, resolution='1m',
+                start_timestamp=lo, end_timestamp=hi-1, count_back=(hi-lo)//60,
+                set_timestamp_to_end='false')
+            if body.get('code') != 200 or body.get('r') != '1m':
+                raise ValueError('Lighter minute history unavailable')
+            values = []; seen = set()
+            for row in body.get('c', []):
+                stamp = int(row['t'])
+                if stamp % 60000:
+                    raise ValueError('Off-grid Lighter candle')
+                ts = stamp // 1000
+                if not lo <= ts < hi:
+                    continue
+                if ts in seen:
+                    raise ValueError('Duplicate Lighter minute')
+                seen.add(ts)
+                o, h, l, c = (float(row[k]) for k in ('o', 'h', 'l', 'c'))
+                v = float(row.get('v', 0))
+                if (not all(math.isfinite(x) for x in (o, h, l, c, v))
+                        or min(o, h, l, c) <= 0 or v < 0
+                        or h < max(o, l, c) or l > min(o, h, c)):
+                    raise ValueError('Invalid Lighter OHLCV')
+                values.append((ts, o, h, l, c, v, int(time.time()*1000)))
+            self.db.executemany('INSERT OR IGNORE INTO minutes VALUES(?,?,?,?,?,?,?)', values)
+            self.db.commit()
+
+        chunks = [(lo, min(lo+500*60, stop)) for lo in range(begin, stop, 500*60)]
+        for index in range(0, len(chunks), 3):
+            await asyncio.gather(*(chunk(lo, hi) for lo, hi in chunks[index:index+3]))
+        records = self.db.execute(
+            'SELECT ts,open,high,low,close,volume FROM minutes '
+            'WHERE ts>=? AND ts<? ORDER BY ts', (first, stop)
+        ).fetchall()
+        frame = pd.DataFrame(records, columns=['timestamp', *COLS])
+        frame['timestamp'] = pd.to_datetime(frame.timestamp, unit='s', utc=True)
+        bars, daily = aggregate_minutes(frame, pd.Timestamp(stop, unit='s', tz='UTC'))
+        return bars.tail(240).reset_index(drop=True), daily
+
+    async def close(self):
+        await self.client.aclose()
+        self.db.close()

@@ -46,7 +46,7 @@ def test_live_path_cannot_be_accidentally_enabled():
 
 def test_live_canary_hard_cap_and_confirmation():
     base = dict(mode='live', dry_run=False,
-                live_confirmation='I_UNDERSTAND_ONE_30_USD_ORDER_CAN_LOSE_ALL',
+                live_confirmation='I_UNDERSTAND_ONE_20_USD_ORDER_CAN_LOSE_ALL',
                 account_eligibility_confirmed=True,
                 signer_private_key='fake', wallet_address='0x'+'1'*40,
                 relayer_api_key='key', relayer_api_key_address='0x'+'2'*40)

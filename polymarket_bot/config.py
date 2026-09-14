@@ -47,6 +47,7 @@ class Settings:
     aux_enabled: bool = True
     history_5m_bars: int = 240
     data_source: str = "binance"
+    execution_strategy: str = "calibrated_edge"
     router_sma_days: int = 25
     router_short_depth_pct: float = 1.5
     short_lane_run_bps: float = 60.0
@@ -61,6 +62,8 @@ class Settings:
     live_fixed_stake_usd: float = 30.0
     live_max_price: float = 0.97
     live_price_slippage: float = 0.01
+    reference_max_age_seconds: int = 75
+    reference_price_padding: float = 0.01
     live_max_orders: int = 1
     live_quote_max_age_ms: int = 1500
     market_event_debounce_ms: int = 100
@@ -93,6 +96,9 @@ class Settings:
             aux_enabled=_flag('POLYMARKET_AUX_ENABLED', True),
             history_5m_bars=max(80, _int("POLYMARKET_HISTORY_5M_BARS", 240)),
             data_source=os.getenv("POLYMARKET_DATA_SOURCE", "binance").strip().lower(),
+            execution_strategy=os.getenv(
+                "POLYMARKET_EXECUTION_STRATEGY", "calibrated_edge"
+            ).strip().lower(),
             router_sma_days=max(2, _int("POLYMARKET_ROUTER_SMA_DAYS", 25)),
             router_short_depth_pct=_float("POLYMARKET_ROUTER_SHORT_DEPTH_PCT", 1.5),
             short_lane_run_bps=max(0.0, _float("POLYMARKET_SHORT_LANE_RUN_BPS", 60.0)),
@@ -107,6 +113,12 @@ class Settings:
             live_fixed_stake_usd=max(0.0, _float("POLYMARKET_LIVE_FIXED_STAKE_USD", 30.0)),
             live_max_price=_float("POLYMARKET_LIVE_MAX_PRICE", 0.97),
             live_price_slippage=max(0.0, _float("POLYMARKET_LIVE_PRICE_SLIPPAGE", 0.01)),
+            reference_max_age_seconds=max(
+                1, _int("POLYMARKET_REFERENCE_MAX_AGE_SECONDS", 75)
+            ),
+            reference_price_padding=max(
+                0.0, _float("POLYMARKET_REFERENCE_PRICE_PADDING", 0.01)
+            ),
             live_max_orders=max(1, _int("POLYMARKET_LIVE_MAX_ORDERS", 1)),
             live_quote_max_age_ms=max(100, _int("POLYMARKET_LIVE_QUOTE_MAX_AGE_MS", 1500)),
             market_event_debounce_ms=max(0, _int("POLYMARKET_MARKET_EVENT_DEBOUNCE_MS", 100)),
@@ -133,8 +145,10 @@ class Settings:
             raise ValueError('Entry delays must satisfy 0 <= delay <= max delay < 900s')
         if self.symbol != "BTCUSDT":
             raise ValueError("Bot 2 currently supports BTCUSDT only")
-        if self.data_source not in {"binance"}:
-            raise ValueError("POLYMARKET_DATA_SOURCE must be binance for this first version")
+        if self.data_source not in {"binance", "lighter"}:
+            raise ValueError("POLYMARKET_DATA_SOURCE must be binance or lighter")
+        if self.execution_strategy not in {"calibrated_edge", "legacy_1230_ref85"}:
+            raise ValueError("Unknown POLYMARKET_EXECUTION_STRATEGY")
         if self.history_5m_bars < 80:
             raise ValueError("history_5m_bars must be at least 80")
         if self.max_stake_usd > self.bankroll_usd:
@@ -147,13 +161,15 @@ class Settings:
             raise ValueError("POLYMARKET_LIVE_MAX_PRICE must be between 0 and 1")
         if self.live_quote_max_age_ms > 10_000:
             raise ValueError("POLYMARKET_LIVE_QUOTE_MAX_AGE_MS must be at most 10000")
+        if not 0 <= self.reference_price_padding < 1:
+            raise ValueError("POLYMARKET_REFERENCE_PRICE_PADDING must be in [0,1)")
         if self.expected_wallet_type not in {"", "EOA", "POLY_PROXY", "GNOSIS_SAFE", "DEPOSIT_WALLET"}:
             raise ValueError("Unknown POLYMARKET_EXPECTED_WALLET_TYPE")
         if self.mode == "live":
             missing = []
             if self.dry_run:
                 missing.append("POLYMARKET_DRY_RUN=0")
-            if self.live_confirmation != "I_UNDERSTAND_ONE_30_USD_ORDER_CAN_LOSE_ALL":
+            if self.live_confirmation != "I_UNDERSTAND_ONE_20_USD_ORDER_CAN_LOSE_ALL":
                 missing.append("POLYMARKET_LIVE_CONFIRM exact phrase")
             if not self.account_eligibility_confirmed:
                 missing.append("POLYMARKET_ACCOUNT_ELIGIBILITY_CONFIRMED=1")
@@ -165,6 +181,22 @@ class Settings:
                 missing.append("both Polymarket Relayer API key fields")
             if self.live_max_orders != 1:
                 missing.append("POLYMARKET_LIVE_MAX_ORDERS=1")
+            if self.execution_strategy == "legacy_1230_ref85":
+                exact = (
+                    self.data_source == "lighter"
+                    and self.signal_policy == "latest_5m"
+                    and self.decision_delay_seconds == 750
+                    and 750 <= self.max_entry_delay_seconds <= 755
+                    and self.session_start_utc == self.session_end_utc == 0
+                    and self.min_entry_price == 0.85
+                    and self.reference_max_age_seconds == 75
+                    and self.reference_price_padding == 0.01
+                    and self.live_fixed_stake_usd == 20
+                    and self.max_stake_usd == 20
+                    and self.bankroll_usd == 50
+                )
+                if not exact:
+                    missing.append("exact legacy 12:30/$20/$50 profile")
             if missing:
                 raise ValueError("Live mode is locked; missing/invalid: " + ", ".join(missing))
 

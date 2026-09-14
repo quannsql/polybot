@@ -10,6 +10,8 @@ from typing import Any
 from .config import Settings
 from .geography import geographic_check
 from .market_data import BinanceFeed
+from .lighter_paper_feed import LighterFeed
+from .actual_research import history_asof
 from .market_stream import MarketChangeStream, MarketStreamError
 from .paper_store import StateStore
 from .polymarket_api import MarketUnavailable, PolymarketLiveExecutor, PolymarketPublic
@@ -22,7 +24,11 @@ logger = logging.getLogger("polymarket_bot")
 class BotEngine:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.feed = BinanceFeed(settings.binance_url)
+        self.feed = (
+            LighterFeed(settings.state_path.parent / "lighter_minutes.sqlite3")
+            if settings.data_source == "lighter"
+            else BinanceFeed(settings.binance_url)
+        )
         self.api = PolymarketPublic(settings)
         self.store = StateStore(settings.state_path, settings.decision_log_path)
         self.risk = RiskEngine(settings, settings.load_calibration())
@@ -73,14 +79,17 @@ class BotEngine:
             return None
 
         try:
-            frame_5m, daily = await asyncio.gather(
-                self.feed.history_5m(
-                    self.settings.symbol, self.settings.history_5m_bars, now=moment
-                ),
-                self.feed.history_1d(
-                    self.settings.symbol, self.settings.router_sma_days + 3, now=moment
-                ),
-            )
+            if isinstance(self.feed, LighterFeed):
+                frame_5m, daily = await self.feed.refresh(moment)
+            else:
+                frame_5m, daily = await asyncio.gather(
+                    self.feed.history_5m(
+                        self.settings.symbol, self.settings.history_5m_bars, now=moment
+                    ),
+                    self.feed.history_1d(
+                        self.settings.symbol, self.settings.router_sma_days + 3, now=moment
+                    ),
+                )
         except Exception as exc:
             self.store.log("signal_feed_unavailable", {"slug": market.slug, "error": str(exc)})
             logger.warning("signal feed unavailable for %s: %s", market.slug, exc)
@@ -111,11 +120,64 @@ class BotEngine:
             if self.settings.mode == "live":
                 return event
 
-        await self._monitor_entry_window(market, signal, start)
+        frozen_cap = None
+        if self.settings.execution_strategy == "legacy_1230_ref85":
+            while frozen_cap is None:
+                try:
+                    frozen_cap = await self._legacy_reference_cap(market, signal, start)
+                except Exception as exc:
+                    remaining = (
+                        start + timedelta(seconds=self.settings.max_entry_delay_seconds)
+                        - datetime.now(timezone.utc)
+                    ).total_seconds()
+                    self.store.log("legacy_reference_unavailable", {
+                        "slug": market.slug, "error": str(exc),
+                        "remaining_seconds": remaining,
+                    })
+                    if remaining <= 0:
+                        self.store.mark_seen(market.slug)
+                        return event
+                    await asyncio.sleep(min(.25, remaining))
+        await self._monitor_entry_window(market, signal, start, frozen_cap)
         return event
 
-    async def _monitor_entry_window(self, market: Any, signal: Any, start: datetime) -> None:
+    async def _legacy_reference_cap(self, market: Any, signal: Any, start: datetime) -> Decimal:
+        due = int(start.timestamp()) + self.settings.decision_delay_seconds
+        history = await self.api.price_history(
+            market.token_for(signal.direction), int(start.timestamp()) - 120, due
+        )
+        reference = history_asof(history, due, self.settings.reference_max_age_seconds)
+        if reference is None:
+            raise ValueError("legacy_reference_missing_or_stale")
+        price = Decimal(str(reference["price"]))
+        if price < Decimal(str(self.settings.min_entry_price)):
+            raise ValueError("legacy_reference_below_085")
+        assumed = price + Decimal(str(self.settings.reference_price_padding))
+        if assumed >= Decimal("1"):
+            raise ValueError("legacy_reference_plus_padding_not_below_one")
+        tick = market.tick_size
+        if tick is None or not Decimal("0") < tick < Decimal("1"):
+            raise ValueError("legacy_market_tick_missing")
+        cap = (assumed / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+        cap = min(cap, Decimal(str(self.settings.live_max_price)))
+        self.store.log("legacy_reference_frozen", {
+            "slug": market.slug, "reference": reference, "cap": cap,
+            "due_seconds": due,
+        })
+        return cap
+
+    async def _monitor_entry_window(
+        self, market: Any, signal: Any, start: datetime,
+        frozen_cap: Decimal | None = None,
+    ) -> None:
         token_id = market.token_for(signal.direction)
+        if frozen_cap is not None:
+            # The legacy window is only five seconds wide. REST immediately;
+            # a WebSocket handshake may consume the entire FOK opportunity.
+            await self._monitor_with_rest_fallback(
+                market, signal, token_id, start, frozen_cap
+            )
+            return
         try:
             async with MarketChangeStream(
                 self.settings.market_ws_url,
@@ -141,15 +203,16 @@ class BotEngine:
                         if self.settings.market_event_debounce_ms:
                             await asyncio.sleep(self.settings.market_event_debounce_ms / 1000)
                     first = False
-                    if await self._evaluate_quote(market, signal, token_id):
+                    if await self._evaluate_quote(market, signal, token_id, frozen_cap):
                         return
         except MarketStreamError as exc:
             self.store.log("market_stream_unavailable", {"slug": market.slug, "error": str(exc)})
             logger.warning("market stream unavailable for %s; using REST fallback: %s", market.slug, exc)
-            await self._monitor_with_rest_fallback(market, signal, token_id, start)
+            await self._monitor_with_rest_fallback(market, signal, token_id, start, frozen_cap)
 
     async def _monitor_with_rest_fallback(
-        self, market: Any, signal: Any, token_id: str, start: datetime
+        self, market: Any, signal: Any, token_id: str, start: datetime,
+        frozen_cap: Decimal | None = None,
     ) -> None:
         while True:
             remaining = (
@@ -160,11 +223,14 @@ class BotEngine:
                 self.store.log("entry_window_expired", {"slug": market.slug, "fallback": "rest"})
                 self.store.mark_seen(market.slug)
                 return
-            if await self._evaluate_quote(market, signal, token_id):
+            if await self._evaluate_quote(market, signal, token_id, frozen_cap):
                 return
             await asyncio.sleep(min(float(self.settings.poll_seconds), remaining))
 
-    async def _evaluate_quote(self, market: Any, signal: Any, token_id: str) -> bool:
+    async def _evaluate_quote(
+        self, market: Any, signal: Any, token_id: str,
+        frozen_cap: Decimal | None = None,
+    ) -> bool:
         try:
             book = await self.api.book(token_id)
         except Exception as exc:
@@ -175,20 +241,31 @@ class BotEngine:
                 "slug": market.slug, "book_timestamp_ms": book.timestamp_ms
             })
             return False
+        if frozen_cap is not None and (book.best_ask is None or book.best_ask > frozen_cap):
+            self.store.log("legacy_ask_above_frozen_cap", {
+                "slug": market.slug, "ask": book.best_ask, "cap": frozen_cap,
+            })
+            return False
         decision = self.risk.decide(market, book, signal)
         self.store.log("decision", {
             "market": market, "signal": signal, "book": book, "decision": decision
         })
         if decision is None:
             return False
-        if decision.reason == "calibration_missing_or_not_approved":
+        if decision.reason in {
+            "calibration_missing_or_not_approved",
+            "legacy_strategy_missing_exact_approval",
+        }:
             self.store.mark_seen(market.slug)
             return True
         if decision.action != "buy":
             return False
-        return await self._execute_fresh_decision(market, signal, decision)
+        return await self._execute_fresh_decision(market, signal, decision, frozen_cap)
 
-    async def _execute_fresh_decision(self, market: Any, signal: Any, decision: Any) -> bool:
+    async def _execute_fresh_decision(
+        self, market: Any, signal: Any, decision: Any,
+        frozen_cap: Decimal | None = None,
+    ) -> bool:
         token_id = market.token_for(signal.direction)
         if self.settings.mode != "live":
             self.store.set_position(market.slug, {
@@ -223,9 +300,15 @@ class BotEngine:
         })
         if final_decision is None or final_decision.action != "buy":
             return False
+        if frozen_cap is not None and (
+                final_book.best_ask is None or final_book.best_ask > frozen_cap):
+            self.store.log("final_legacy_ask_above_frozen_cap", {
+                "slug": market.slug, "ask": final_book.best_ask, "cap": frozen_cap,
+            })
+            return False
 
         tick = market.tick_size or final_book.tick_size or Decimal("0.01")
-        cap = min(
+        cap = frozen_cap if frozen_cap is not None else min(
             Decimal(str(self.settings.live_max_price)),
             final_decision.ask + Decimal(str(self.settings.live_price_slippage)),
         )
@@ -280,6 +363,10 @@ class BotEngine:
         if self.executor is not None:
             await self.executor.connect()
         try:
+            if isinstance(self.feed, LighterFeed):
+                # Warm the persistent 28-day cache before an entry window begins.
+                # A failed warmup is fatal in live mode; there is no Binance fallback.
+                await self.feed.refresh(datetime.now(timezone.utc))
             while True:
                 try:
                     await self.run_once()
@@ -290,3 +377,8 @@ class BotEngine:
             if self.executor is not None:
                 await self.executor.close()
             await self.api.close()
+            close = getattr(self.feed, "close", None)
+            if close is not None:
+                result = close()
+                if hasattr(result, "__await__"):
+                    await result

@@ -40,6 +40,31 @@ class RiskEngine:
             return None
         return _clamp_probability(source.get(signal.direction))
 
+    def legacy_approval(self, signal: SignalSnapshot) -> Decimal | None:
+        """Return a descriptive historical rate only for the exact approved rule.
+
+        This rate is logged for auditability.  It is not treated as a calibrated
+        conditional probability and is not used for an edge threshold.
+        """
+        if self.settings.execution_strategy != "legacy_1230_ref85":
+            return None
+        expected = {
+            "approved": True,
+            "strategy_id": "dca_legacy_1230_ref85_v1",
+            "signal_policy": "latest_5m",
+            "signal_source": "lighter_1m_resampled",
+            "entry_seconds": 750,
+            "stake_usd": 20,
+            "bankroll_usd": 50,
+        }
+        if any(self.calibration.get(key) != value for key, value in expected.items()):
+            return None
+        table = self.calibration.get("descriptive_win_rate_by_source")
+        if not isinstance(table, dict):
+            return None
+        source = table.get(signal.source)
+        return _clamp_probability(source.get(signal.direction)) if isinstance(source, dict) else None
+
     def decide(self, market: Market, book: Book, signal: SignalSnapshot) -> TradeDecision | None:
         if not signal.direction or not signal.source:
             return None
@@ -53,12 +78,45 @@ class RiskEngine:
                 Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
                 Decimal("0"), Decimal("0"), "skip", "spread_above_limit",
             )
-        if ask < Decimal(str(self.settings.min_entry_price)):
+        if (self.settings.execution_strategy != "legacy_1230_ref85"
+                and ask < Decimal(str(self.settings.min_entry_price))):
             return TradeDecision(
                 market.slug, signal.direction, signal.source, ask, spread,
                 Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
                 Decimal("0"), Decimal("0"), "skip", "price_below_entry_filter",
             )
+        legacy_rate = self.legacy_approval(signal)
+        if self.settings.execution_strategy == "legacy_1230_ref85":
+            if legacy_rate is None:
+                return TradeDecision(
+                    market.slug, signal.direction, signal.source, ask, spread,
+                    Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
+                    Decimal("0"), Decimal("0"), "paper_signal_only",
+                    "legacy_strategy_missing_exact_approval",
+                )
+            fee_rate = Decimal(str(self.settings.taker_fee_rate)) if market.fees_enabled else Decimal("0")
+            fee_per_share = fee_rate * ask * (Decimal("1") - ask)
+            stake = min(Decimal(str(self.settings.live_fixed_stake_usd)),
+                        Decimal(str(self.settings.max_stake_usd)))
+            min_shares = market.min_order_size or book.min_order_size
+            if min_shares and stake < min_shares * ask:
+                stake = Decimal("0")
+            stake = stake.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+            shares = (stake / ask).quantize(Decimal("0.0001"), rounding=ROUND_DOWN) if stake else Decimal("0")
+            if stake <= 0:
+                return TradeDecision(
+                    market.slug, signal.direction, signal.source, ask, spread,
+                    legacy_rate, fee_per_share, Decimal("0"), Decimal("0"),
+                    Decimal("0"), Decimal("0"), "skip", "stake_below_minimum",
+                )
+            # No fabricated model edge: execution follows the explicitly
+            # approved historical threshold rule and frozen reference cap.
+            return TradeDecision(
+                market.slug, signal.direction, signal.source, ask, spread,
+                legacy_rate, fee_per_share, Decimal("0"), stake, shares,
+                Decimal("0"), "buy", "approved_legacy_threshold_rule",
+            )
+
         p = self.probability(signal)
         if p is None:
             return TradeDecision(

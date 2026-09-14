@@ -45,8 +45,9 @@ async def main() -> None:
             "wallet_type": executor.client.wallet_type,
             "pUSD_balance": str(balance.balance / 1_000_000),
             "allowance_count": len(balance.allowances),
-            "allowances_sufficient_for_30": (
-                all(value >= 30_000_000 for value in balance.allowances.values())
+            "allowances_sufficient_for_fixed_stake": (
+                all(value >= int(settings.live_fixed_stake_usd * 1_000_000)
+                    for value in balance.allowances.values())
                 if balance.allowances else False
             ),
             "note": "No API key, passphrase, private key, or allowance values are printed.",

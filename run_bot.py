@@ -19,6 +19,11 @@ async def _run_once(engine: BotEngine) -> None:
         if engine.executor is not None:
             await engine.executor.close()
         await engine.api.close()
+        close = getattr(engine.feed, "close", None)
+        if close is not None:
+            result = close()
+            if hasattr(result, "__await__"):
+                await result
 
 
 def main() -> None:
