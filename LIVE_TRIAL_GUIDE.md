@@ -72,11 +72,10 @@ Console tự base64 encode. Copy **Secret OCID**, không copy nội dung secret.
 ALL {instance.id = 'OCID_CUA_INSTANCE'}
 ```
 
-5. Tạo IAM Policy trong compartment chứa secret và instance:
+5. Tạo IAM Policy trong compartment chứa secret:
 
 ```text
 Allow dynamic-group polybot-vault-readers to read secret-bundles in compartment TEN_COMPARTMENT
-Allow dynamic-group polybot-vault-readers to read instance-family in compartment TEN_COMPARTMENT
 ```
 
 6. Compute → Instances → instance `polybot` → tab **Tags** → **Add tags** →

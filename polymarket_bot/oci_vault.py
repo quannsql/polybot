@@ -30,19 +30,17 @@ def decode_secret_json(content: str) -> dict[str, str]:
 
 
 def secret_id_from_metadata_payload(payload: Any) -> str:
-    if not isinstance(payload, dict) or not isinstance(payload.get("metadata"), dict):
+    if not isinstance(payload, dict):
         return ""
-    value = payload["metadata"].get("polybot_secret_ocid", "")
-    return value.strip() if isinstance(value, str) else ""
-
-
-def secret_id_from_instance_details(instance: Any) -> str:
-    """Read the non-secret Vault identifier from an OCI free-form tag."""
-    tags = getattr(instance, "freeform_tags", None)
-    if not isinstance(tags, dict):
-        return ""
-    value = tags.get("polybot_secret_ocid", "")
-    return value.strip() if isinstance(value, str) else ""
+    # OCI IMDSv2 exposes console-managed tags directly. Custom metadata remains
+    # a fallback for instances that were configured using the older workflow.
+    for section_name in ("freeformTags", "metadata"):
+        section = payload.get(section_name)
+        if isinstance(section, dict):
+            value = section.get("polybot_secret_ocid", "")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
 
 
 def _instance_metadata_payload() -> dict[str, Any]:
@@ -66,33 +64,19 @@ def load_oci_vault_env_if_configured() -> bool:
     use_metadata = os.getenv("OCI_POLYBOT_USE_INSTANCE_METADATA", "").lower() in {
         "1", "true", "yes", "on"
     }
-    signer = None
     if not secret_id and use_metadata:
         try:
             metadata = _instance_metadata_payload()
-            # Keep supporting instances that already have legacy custom metadata.
             secret_id = secret_id_from_metadata_payload(metadata)
-            if not secret_id:
-                import oci
-
-                instance_id = metadata.get("id", "")
-                if not isinstance(instance_id, str) or not instance_id.strip():
-                    raise RuntimeError("OCI instance metadata did not include an instance OCID")
-                signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-                compute = oci.core.ComputeClient(config={}, signer=signer)
-                instance = compute.get_instance(instance_id.strip()).data
-                secret_id = secret_id_from_instance_details(instance)
         except Exception as exc:
-            raise RuntimeError(
-                "Could not read polybot_secret_ocid from OCI instance metadata or free-form tags"
-            ) from exc
+            raise RuntimeError("Could not read polybot_secret_ocid from OCI instance metadata") from exc
     if not secret_id:
         return False
     try:
         import oci
     except ImportError as exc:
         raise RuntimeError("Install requirements-live-sdk.txt for OCI Vault support") from exc
-    signer = signer or oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+    signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
     client = oci.secrets.SecretsClient(config={}, signer=signer)
     bundle = client.get_secret_bundle(secret_id=secret_id, stage="CURRENT").data
     content = getattr(getattr(bundle, "secret_bundle_content", None), "content", None)
