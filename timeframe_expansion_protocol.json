@@ -1,0 +1,23 @@
+{
+  "id": "dca_timeframes_expansion_v1",
+  "main_boll_minutes": [1, 3, 5, 10, 15, 30],
+  "aux_short_boll_minutes": [5, 15, 30, 60],
+  "pair_rule": "Auxiliary timeframe must be >= main and an integer multiple. Main routed long/short band touch; aux short band touch plus 60-minute pump >=60bps. Aux priority. Both enabled, 24h.",
+  "boll_period": 20,
+  "boll_multiplier": 2,
+  "daily_sma": 25,
+  "short_depth_pct": 1.5,
+  "horizon_minutes": [5, 10, 15, 30, 60, 240],
+  "max_signal_age_minutes": 10,
+  "train_start": "2025-12-10",
+  "validation_start": "2026-04-19",
+  "confirmation_start": "2026-07-14",
+  "proxy_shortlist": "Top 2 per horizon by validation Wilson lower bound with >=100 train and >=100 validation signals; always add original 5m+15m. Freeze before reading confirmation results. Directional proxy is a screening device only, not 99% late entry comparison.",
+  "venue_horizons": [5, 15, 60, 240],
+  "entry_fraction": [23, 30],
+  "entry_note": "Preserve 11:30/15m fraction: 5m enter3:50;10m7:40;15m11:30;30m23:00;1h46:00;4h184:00. Threshold reference>=0.85, age<=75s, reference+1c<1. No entry recheck or new ask cap.",
+  "venue_selection": "Within shortlisted signals, rank validation mean PnL at +1c, requiring >=50 eligible validation entries and positive validation PnL at both +1c and +3c; tie-break sample then ID. Freeze selected ID before confirmation scoring. Report none if none passes; no forced winner.",
+  "budget_usd": 30,
+  "pads": [0.01, 0.02, 0.03],
+  "limits": "Previously explored history. No claim of exhaustive global optimization, pristine holdout or live readiness. 10m/30m research horizons are synthetic unless corresponding contracts verified. 1h settlement uses Binance per verified rules; use actual API winner, not Lighter label for PnL. No live or paper config mutation."
+}
