@@ -1,0 +1,5 @@
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY paper_dashboard.py paper_dashboard.html ./
+CMD ["python", "-B", "paper_dashboard.py"]
