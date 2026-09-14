@@ -52,12 +52,16 @@ def snapshot(path=DB):
             raw = json.loads(sig['payload'])
             signal = {'slug': sig['slug'], 'at': sig['received_ms'],
                       'direction': raw.get('signals', {}).get('dca'),
+                      'reason': raw.get('baseline', {}).get('reason'),
                       'source': raw.get('baseline', {}).get('source')}
         errors = [dict(r) for r in db.execute("SELECT received_ms,kind,slug,payload FROM events WHERE kind IN ('tick_error','settlement_error') ORDER BY id DESC LIMIT 5")]
         plan = db.execute("SELECT received_ms,payload FROM events WHERE kind='run_plan' ORDER BY id DESC LIMIT 1").fetchone()
         end_ms = None
+        protocol = {}
         if plan:
-            end_ms = plan['received_ms'] + json.loads(plan['payload']).get('duration_seconds', 0)*1000
+            run = json.loads(plan['payload'])
+            end_ms = plan['received_ms'] + run.get('duration_seconds', 0)*1000
+            protocol = run.get('protocol', {})
         robustness = None
         report_path=Path(os.environ.get('ROBUST_REPORT','/robust/robustness_report.json'))
         try:
@@ -66,7 +70,8 @@ def snapshot(path=DB):
             pass
         return {'now_ms': int(time.time()*1000), 'latest': dict(recent) if recent else None,
                 'policies': policies, 'trades': trades, 'signal': signal,
-                'errors': errors, 'planned_end_ms': end_ms, 'robustness':robustness}
+                'errors': errors, 'planned_end_ms': end_ms, 'robustness':robustness,
+                'session': {k: protocol.get(k) for k in ('session_start_utc','session_end_utc','entry_seconds')}}
 
 
 class Handler(BaseHTTPRequestHandler):
