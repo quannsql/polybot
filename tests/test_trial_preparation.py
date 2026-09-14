@@ -2,6 +2,7 @@ import asyncio
 from decimal import Decimal
 import json
 from pathlib import Path
+import time
 
 import pytest
 
@@ -87,6 +88,51 @@ def test_executor_uses_fok_price_and_spend_caps():
     }
     assert result['reconciled'] is True
     assert result['filled'] is False
+
+
+def test_executor_rejects_stale_final_quote_before_submission():
+    class Client:
+        def __init__(self):
+            self.submitted = False
+        async def get_balance_allowance(self, **kwargs):
+            return type('Balance', (), {'balance': 30_000_000})()
+        async def place_market_order(self, **kwargs):
+            self.submitted = True
+
+    settings = Settings(live_quote_max_age_ms=100)
+    executor = PolymarketLiveExecutor(settings)
+    executor.client = Client()
+    with pytest.raises(RuntimeError, match='Final quote became stale'):
+        asyncio.run(executor.buy(
+            'token', Decimal('30'), Decimal('.91'), quote_observed_at=time.monotonic() - 1
+        ))
+    assert executor.client.submitted is False
+
+
+def test_executor_reuses_recent_balance_check():
+    class Rejected:
+        ok = False
+        def model_dump(self, mode):
+            return {"ok": False}
+
+    class Client:
+        def __init__(self):
+            self.balance_calls = 0
+        async def get_balance_allowance(self, **kwargs):
+            self.balance_calls += 1
+            return type('Balance', (), {'balance': 30_000_000})()
+        async def place_market_order(self, **kwargs):
+            return Rejected()
+
+    executor = PolymarketLiveExecutor(Settings())
+    executor.client = Client()
+
+    async def exercise():
+        await executor.ensure_balance(Decimal('30'), max_age=0)
+        await executor.buy('token', Decimal('30'), Decimal('.91'))
+
+    asyncio.run(exercise())
+    assert executor.client.balance_calls == 1
 
 
 def test_thirty_dollars_includes_fee_and_walks_depth():

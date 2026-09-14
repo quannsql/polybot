@@ -43,6 +43,7 @@ class Book:
     tick_size: Decimal | None
     min_order_size: Decimal | None
     neg_risk: bool
+    timestamp_ms: int | None = None
 
 
 @dataclass(frozen=True)

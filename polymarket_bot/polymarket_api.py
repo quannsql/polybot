@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 import importlib.metadata
 import json
 import re
+import time
 from typing import Any
 
 import httpx
@@ -54,12 +55,31 @@ class PolymarketPublic:
     def __init__(self, settings: Settings, timeout: float = 10.0):
         self.settings = settings
         self.timeout = timeout
+        self.client = httpx.AsyncClient(timeout=timeout, trust_env=False)
+        self.server_clock_offset_ms = 0
 
     async def _get(self, url: str, **params: Any) -> Any:
-        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
-            response = await client.get(url, params=params or None)
-            response.raise_for_status()
-            return response.json()
+        response = await self.client.get(url, params=params or None)
+        response.raise_for_status()
+        return response.json()
+
+    async def close(self) -> None:
+        await self.client.aclose()
+
+    async def sync_clock(self) -> int:
+        """Measure CLOB clock offset so source timestamps can be aged correctly."""
+        before_ms = time.time() * 1000
+        server_time = await self._get(f"{self.settings.clob_url}/time")
+        after_ms = time.time() * 1000
+        if not isinstance(server_time, (int, float)):
+            raise RuntimeError("Invalid CLOB server clock response")
+        midpoint_ms = (before_ms + after_ms) / 2
+        self.server_clock_offset_ms = round(float(server_time) * 1000 - midpoint_ms)
+        if abs(self.server_clock_offset_ms) > 30_000:
+            raise RuntimeError(
+                f"Server clock offset too large ({self.server_clock_offset_ms / 1000:.1f}s)"
+            )
+        return self.server_clock_offset_ms
 
     @staticmethod
     def window_start(now: datetime | None = None) -> datetime:
@@ -123,6 +143,9 @@ class PolymarketPublic:
             raw = await self._get(f"{self.settings.clob_url}/book", token_id=token_id)
         except httpx.HTTPStatusError as exc:
             raise MarketUnavailable(f"CLOB book unavailable: {exc.response.status_code}") from exc
+        returned_asset = raw.get("asset_id")
+        if returned_asset is not None and str(returned_asset) != str(token_id):
+            raise MarketUnavailable("CLOB returned an order book for a different token")
         bids = [(Decimal(str(x["price"])), Decimal(str(x["size"])))
                 for x in (raw.get("bids") or []) if isinstance(x, dict) and _decimal(x.get("price")) is not None]
         asks = [(Decimal(str(x["price"])), Decimal(str(x["size"])))
@@ -139,6 +162,7 @@ class PolymarketPublic:
             tick_size=_decimal(raw.get("tick_size")),
             min_order_size=_decimal(raw.get("min_order_size")),
             neg_risk=bool(raw.get("neg_risk", False)),
+            timestamp_ms=int(raw["timestamp"]) if str(raw.get("timestamp", "")).isdigit() else None,
         )
 
 
@@ -148,6 +172,8 @@ class PolymarketLiveExecutor:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.client: Any = None
+        self._balance = 0
+        self._balance_checked_at = 0.0
 
     async def connect(self) -> None:
         if self.client is not None:
@@ -185,24 +211,49 @@ class PolymarketLiveExecutor:
             actual = client.wallet_type
             await client.close()
             raise RuntimeError(f"Wallet type mismatch: SDK resolved {actual}")
-        balance = await client.get_balance_allowance(asset_type="COLLATERAL")
-        required = int(Decimal(str(self.settings.live_fixed_stake_usd)) * 1_000_000)
-        if balance.balance < required:
-            await client.close()
-            available = Decimal(balance.balance) / Decimal(1_000_000)
-            raise RuntimeError(f"Insufficient pUSD balance for canary: {available} available")
         self.client = client
+        try:
+            await self.ensure_balance(
+                Decimal(str(self.settings.live_fixed_stake_usd)), max_age=0
+            )
+        except Exception:
+            await client.close()
+            self.client = None
+            raise
 
-    async def buy(self, token_id: str, stake_usd: Decimal, max_price: Decimal) -> dict[str, Any]:
+    async def ensure_balance(self, stake_usd: Decimal, max_age: float = 5.0) -> None:
+        if self.client is None:
+            raise RuntimeError("Live executor is not connected")
+        now = time.monotonic()
+        if max_age <= 0 or now - self._balance_checked_at >= max_age:
+            balance = await self.client.get_balance_allowance(asset_type="COLLATERAL")
+            self._balance = int(balance.balance)
+            self._balance_checked_at = time.monotonic()
+        required = int(stake_usd * 1_000_000)
+        if self._balance < required:
+            available = Decimal(self._balance) / Decimal(1_000_000)
+            raise RuntimeError(f"Insufficient pUSD balance: {available} available")
+
+    async def buy(
+        self,
+        token_id: str,
+        stake_usd: Decimal,
+        max_price: Decimal,
+        quote_observed_at: float | None = None,
+    ) -> dict[str, Any]:
         if self.client is None:
             raise RuntimeError("Live executor is not connected")
         if not Decimal("0") < stake_usd <= Decimal("30"):
             raise RuntimeError("Live order must be greater than $0 and no more than $30")
         if not Decimal("0") < max_price <= Decimal(str(self.settings.live_max_price)):
             raise RuntimeError("Live order price exceeds configured cap")
-        balance = await self.client.get_balance_allowance(asset_type="COLLATERAL")
-        if balance.balance < int(stake_usd * 1_000_000):
-            raise RuntimeError("Insufficient pUSD balance immediately before order")
+        await self.ensure_balance(stake_usd)
+        if quote_observed_at is not None:
+            quote_age_ms = (time.monotonic() - quote_observed_at) * 1000
+            if quote_age_ms > self.settings.live_quote_max_age_ms:
+                raise RuntimeError(
+                    f"Final quote became stale before submission ({quote_age_ms:.0f}ms)"
+                )
 
         # FOK leaves no resting remainder. max_spend lets the V2 SDK reduce the
         # notional for its current fee schedule so the all-in target is capped.
@@ -261,3 +312,4 @@ class PolymarketLiveExecutor:
                 result = close()
                 if hasattr(result, "__await__"):
                     await result
+            self.client = None

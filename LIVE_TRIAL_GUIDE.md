@@ -164,6 +164,22 @@ Bot giữ hướng DCA chốt ở đầu window, kiểm tra entry từ T+10:30 t
 yêu cầu ask cùng hướng ít nhất 0.85, spread tối đa 0.03, edge sau phí tối thiểu
 0.03 và price cap thấp hơn trong `ask+0.01` hoặc `0.97`.
 
+Trong cửa sổ này bot subscribe CLOB market WebSocket cho cả hai outcome. Event
+chỉ là tín hiệu đánh thức; REST order book mới là nguồn giá quyết định. Trước
+submit, bot kiểm tra song song geography/số dư, lấy REST book lần cuối, tính lại
+spread/edge/depth rồi mới ghi intent và gửi FOK. Các mặc định vận hành là:
+
+```dotenv
+POLYMARKET_POLL_SECONDS=1
+POLYMARKET_LIVE_QUOTE_MAX_AGE_MS=1500
+POLYMARKET_MARKET_EVENT_DEBOUNCE_MS=100
+```
+
+Nếu giá tạm thời dưới 0.85, spread/edge/depth chưa đạt hoặc quote cũ, bot tiếp
+tục chờ event tới T+11:30 thay vì đánh dấu market đã xử lý. Mất WebSocket sẽ
+fallback REST mỗi giây. Đây là kiểm soát độ trễ/giá, không phải bảo đảm fill;
+FOK vẫn có thể bị hủy nếu depth thay đổi trước khi CLOB nhận lệnh.
+
 Sau một intent—kể cả mạng lỗi khiến kết quả mơ hồ—journal chặn lần thứ hai.
 Không xóa `/data/live_state.json` để retry trước khi đối chiếu order/position
 trên Polymarket. Dừng bot sau lần thử:

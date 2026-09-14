@@ -139,13 +139,18 @@ auxiliary bật, `POLYMARKET_SIGNAL_POLICY=boundary`. Có thể chọn `latest_5
 xác nhận trùng cấu hình Bot1 trên server.
 
 Engine dùng lõi `polymarket_bot/signal_grid.py` chung với nghiên cứu. Cấu hình
-mặc định giữ hướng đầu window và xét entry từ T+10:30 tới T+11:30.
+mặc định giữ hướng đầu window và xét entry liên tục từ T+10:30 tới T+11:30.
+WebSocket market chỉ đánh thức engine khi order book đổi; mỗi lần đánh giá và
+ngay trước live submit, bot đều lấy lại REST book có timestamp. Quote quá 1,5
+giây bị bỏ qua. Nếu WebSocket mất kết nối, bot chuyển sang REST polling 1 giây.
 Log nằm tại `logs/decisions.jsonl`; state tại `logs/paper_state.json`.
 
 Thiếu calibration hoặc `approved` chưa true thì chỉ ghi tín hiệu/quyết định.
 Không dùng calibration của policy/phiên/nguồn giá khác mà chưa kiểm định lại.
-Live canary dùng SDK V2, FOK, trần giá/spend, journal trước submit và chờ
-settlement. Tuy nhiên calibration chiến lược mẫu vẫn không được phê duyệt;
+Live canary dùng SDK V2, FOK, trần giá/spend, kiểm tra lại geography/số dư,
+REST quote cuối, journal trước submit và chờ settlement. FOK và quote-age guard
+giảm rủi ro giá cũ nhưng không bảo đảm khớp hoặc loại bỏ hoàn toàn latency.
+Tuy nhiên calibration chiến lược mẫu vẫn không được phê duyệt;
 không nhầm readiness thực thi với bằng chứng có lợi nhuận.
 
 ## Kiểm thử

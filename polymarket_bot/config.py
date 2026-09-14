@@ -36,9 +36,10 @@ class Settings:
     symbol: str = "BTCUSDT"
     gamma_url: str = "https://gamma-api.polymarket.com"
     clob_url: str = "https://clob.polymarket.com"
+    market_ws_url: str = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
     geoblock_url: str = "https://polymarket.com/api/geoblock"
     binance_url: str = "https://api.binance.com"
-    poll_seconds: int = 5
+    poll_seconds: int = 1
     decision_delay_seconds: int = 630
     max_entry_delay_seconds: int = 690
     signal_policy: str = 'boundary'
@@ -61,6 +62,8 @@ class Settings:
     live_max_price: float = 0.97
     live_price_slippage: float = 0.01
     live_max_orders: int = 1
+    live_quote_max_age_ms: int = 1500
+    market_event_debounce_ms: int = 100
     expected_wallet_type: str = ""
     account_eligibility_confirmed: bool = False
     kelly_fraction: float = 0.10
@@ -82,7 +85,7 @@ class Settings:
         settings = cls(
             mode=mode,
             symbol=os.getenv("POLYMARKET_SYMBOL", "BTCUSDT").upper(),
-            poll_seconds=max(1, _int("POLYMARKET_POLL_SECONDS", 5)),
+            poll_seconds=max(1, _int("POLYMARKET_POLL_SECONDS", 1)),
             decision_delay_seconds=max(0, _int("POLYMARKET_DECISION_DELAY_SECONDS", 630)),
             max_entry_delay_seconds=_int('POLYMARKET_MAX_ENTRY_DELAY_SECONDS', 690),
             signal_policy=os.getenv('POLYMARKET_SIGNAL_POLICY', 'boundary'),
@@ -105,6 +108,8 @@ class Settings:
             live_max_price=_float("POLYMARKET_LIVE_MAX_PRICE", 0.97),
             live_price_slippage=max(0.0, _float("POLYMARKET_LIVE_PRICE_SLIPPAGE", 0.01)),
             live_max_orders=max(1, _int("POLYMARKET_LIVE_MAX_ORDERS", 1)),
+            live_quote_max_age_ms=max(100, _int("POLYMARKET_LIVE_QUOTE_MAX_AGE_MS", 1500)),
+            market_event_debounce_ms=max(0, _int("POLYMARKET_MARKET_EVENT_DEBOUNCE_MS", 100)),
             expected_wallet_type=os.getenv("POLYMARKET_EXPECTED_WALLET_TYPE", "").strip().upper(),
             account_eligibility_confirmed=_flag("POLYMARKET_ACCOUNT_ELIGIBILITY_CONFIRMED", False),
             kelly_fraction=min(1.0, max(0.0, _float("POLYMARKET_KELLY_FRACTION", 0.10))),
@@ -140,6 +145,8 @@ class Settings:
             raise ValueError("The canary has a hard $30 per-order cap")
         if not 0 < self.live_max_price < 1:
             raise ValueError("POLYMARKET_LIVE_MAX_PRICE must be between 0 and 1")
+        if self.live_quote_max_age_ms > 10_000:
+            raise ValueError("POLYMARKET_LIVE_QUOTE_MAX_AGE_MS must be at most 10000")
         if self.expected_wallet_type not in {"", "EOA", "POLY_PROXY", "GNOSIS_SAFE", "DEPOSIT_WALLET"}:
             raise ValueError("Unknown POLYMARKET_EXPECTED_WALLET_TYPE")
         if self.mode == "live":

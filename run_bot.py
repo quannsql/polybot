@@ -18,6 +18,7 @@ async def _run_once(engine: BotEngine) -> None:
     finally:
         if engine.executor is not None:
             await engine.executor.close()
+        await engine.api.close()
 
 
 def main() -> None:
