@@ -20,6 +20,8 @@ from polymarket_bot.actual_research import parse_market, fee_schedule, settlemen
 from polymarket_bot.market_data import BinanceFeed
 from polymarket_bot.signal import snapshot
 from polymarket_bot.robustness import select_intent, favourite, replay_fill
+from polymarket_bot.legacy import legacy_reference, legacy_intent
+from polymarket_bot.lighter_paper_feed import LighterPaperFeed
 
 
 def encode(value):
@@ -34,7 +36,8 @@ class Experiment:
         root=Path(__file__).resolve().parent
         files=['collect_robust_paper.py','collect_poly_paper.py','research_polymarket_actual.py',
                'polymarket_bot/robustness.py','polymarket_bot/actual_research.py',
-               'polymarket_bot/signal.py','polymarket_bot/signal_grid.py','polymarket_bot/market_data.py']
+               'polymarket_bot/signal.py','polymarket_bot/signal_grid.py','polymarket_bot/market_data.py',
+               'polymarket_bot/legacy.py','polymarket_bot/lighter_paper_feed.py']
         self.manifest={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in files}
         self.dependencies={name:importlib.metadata.version(name) for name in ('httpx','pandas','numpy','websockets')}
         self.digest = hashlib.sha256(encode({'protocol':protocol,'code':self.manifest,'dependencies':self.dependencies}).encode()).hexdigest()
@@ -43,13 +46,16 @@ class Experiment:
         db.execute('CREATE TABLE IF NOT EXISTS labels (slug TEXT PRIMARY KEY, received_ms INTEGER, winner TEXT)')
         db.execute('CREATE TABLE IF NOT EXISTS windows (slug TEXT PRIMARY KEY, start_ms INTEGER, signal TEXT, reason TEXT)')
         db.execute('CREATE TABLE IF NOT EXISTS measurements (slug TEXT, policy TEXT, payload TEXT, PRIMARY KEY(slug,policy))')
+        db.execute('CREATE TABLE IF NOT EXISTS legacy_candidates (slug TEXT PRIMARY KEY, side TEXT, eligible INTEGER, payload TEXT)')
+        db.execute('CREATE INDEX IF NOT EXISTS events_kind_id ON events(kind,id)')
         existing = db.execute('SELECT hash FROM experiment').fetchone()
         if existing and existing[0] != self.digest:
             db.close()
             raise ValueError('Protocol changed: use a separate output directory')
         db.commit()
         self.api = PublicArchive(output)
-        self.feed = BinanceFeed()
+        self.feed = (LighterPaperFeed(self.api,self.ledger) if protocol.get('signal_source')=='lighter_1m_resampled'
+                     else BinanceFeed())
 
     async def sync_clock(self):
         offsets = []
@@ -68,8 +74,11 @@ class Experiment:
 
     async def frozen_signal(self, start):
         at = datetime.fromtimestamp(start, tz=timezone.utc)
-        frame, daily = await asyncio.gather(self.feed.history_5m('BTCUSDT', 240, now=at),
-                                          self.feed.history_1d('BTCUSDT', 28, now=at))
+        if isinstance(self.feed,LighterPaperFeed):
+            frame,daily = await self.feed.refresh(at)
+        else:
+            frame, daily = await asyncio.gather(self.feed.history_5m('BTCUSDT', 240, now=at),
+                                              self.feed.history_1d('BTCUSDT', 28, now=at))
         p = self.protocol
         signal = snapshot(frame, decision_at=at, daily_frame=daily, policy=p['signal_policy'],
                           session_start_utc=p['session_start_utc'], session_end_utc=p['session_end_utc'],
@@ -78,7 +87,8 @@ class Experiment:
             raise ValueError('Signal missed opening deadline')
         self.ledger.event('signals_frozen', f'btc-updown-15m-{start}', {
             'signals': {'dca': signal.direction}, 'baseline': asdict(signal),
-            'candles_5m': frame.to_dict('records'), 'daily': daily.to_dict('records')})
+            'candles_5m': frame.to_dict('records'), 'daily': daily.to_dict('records'),
+            'signal_feed':p.get('signal_source','binance')})
         return signal
 
     async def market(self, start):
@@ -140,9 +150,25 @@ class Experiment:
     async def evaluate(self, market, fee, signal, start):
         p, ledger = self.protocol, self.ledger
         due = start*1000+p['entry_seconds']*1000
-        books, timings = await self.books(market)
+        references = None
+        if p.get('reference_source')=='prices-history':
+            # The response must actually have arrived at entry, not be fetched
+            # later and retrospectively treated as information known then.
+            async def get_reference():
+                requested=ledger.ms()
+                if signal.direction not in market['tokens']:
+                    return {'reason':'no_signal','history':[],'received_ms':ledger.ms()}
+                response=await self.api.get('https://clob.polymarket.com/prices-history',
+                    market=market['tokens'][signal.direction],startTs=start-120,
+                    endTs=due//1000,fidelity=p['reference_fidelity_minutes'])
+                return {'requested_ms':requested,'received_ms':ledger.ms(),'response':response}
+            (books,timings),references = await asyncio.gather(self.books(market),get_reference())
+        else:
+            books, timings = await self.books(market)
         decision_ms, decision_mono = ledger.ms(), time.monotonic()
         ledger.event('robust_decision_books', market['slug'], {'books':books,'timings':timings,'decision_ms':decision_ms})
+        if references is not None:
+            ledger.event('legacy_reference_capture',market['slug'],references)
         if not 0 <= decision_ms-due <= p['entry_tolerance_ms']:
             raise ValueError('Missed fixed entry timestamp tolerance')
         choices = {'dca': signal.direction}
@@ -151,10 +177,29 @@ class Experiment:
         except ValueError:
             choices['favourite'] = None
         intents = {}
+        if references is not None:
+            # Only the DCA legacy candidate is tested; no new favourite filter.
+            choices={'dca':signal.direction}
         for name, side in choices.items():
             try:
-                intents[name] = select_intent(side, books, decision_ms, p)
+                if references is not None:
+                    if references.get('reason'):
+                        raise ValueError(references['reason'])
+                    response=references['response']
+                    if response.get('status')!=200:
+                        raise ValueError('legacy_reference_network_unavailable')
+                    ref=legacy_reference(response.get('body',{}).get('history',[]),due//1000,p)
+                    ledger.db.execute('INSERT OR IGNORE INTO legacy_candidates VALUES(?,?,?,?)',
+                                      (market['slug'],side,1,encode({'reference':ref,'capture':references,'fee':fee,'decision_ms':decision_ms})))
+                    ledger.db.commit()
+                    intents[name]=legacy_intent(side,books,ref,decision_ms,p)
+                else:
+                    intents[name] = select_intent(side, books, decision_ms, p)
             except (ValueError, KeyError) as exc:
+                if references is not None:
+                    ledger.db.execute('INSERT OR IGNORE INTO legacy_candidates VALUES(?,?,?,?)',
+                                      (market['slug'],side,0,encode({'reason':str(exc),'capture':references,'decision_ms':decision_ms})))
+                    ledger.db.commit()
                 for delay in p['latency_ms']:
                     for depth in p['depth_fractions']:
                         ledger.attempt(market['slug'], f'{name}_{delay}ms_depth{int(depth*100)}', side, reason=str(exc))
@@ -274,6 +319,10 @@ class Experiment:
         chainlink = asyncio.create_task(record_chainlink(ledger,duration))
         housekeeping = asyncio.create_task(self.housekeeping(deadline))
         async def windows():
+            if isinstance(self.feed,LighterPaperFeed):
+                ledger.event('signal_warmup_started',None,{'source':'Lighter 1m','days':28})
+                await self.feed.refresh(datetime.fromtimestamp(int(ledger.now())//900*900,tz=timezone.utc))
+                ledger.event('signal_warmup_complete',None,{})
             while ledger.now()<deadline:
                 start = int(ledger.now())//900*900
                 try:

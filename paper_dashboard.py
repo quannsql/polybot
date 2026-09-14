@@ -71,7 +71,8 @@ def snapshot(path=DB):
         return {'now_ms': int(time.time()*1000), 'latest': dict(recent) if recent else None,
                 'policies': policies, 'trades': trades, 'signal': signal,
                 'errors': errors, 'planned_end_ms': end_ms, 'robustness':robustness,
-                'session': {k: protocol.get(k) for k in ('session_start_utc','session_end_utc','entry_seconds')}}
+                'session': {k: protocol.get(k) for k in ('session_start_utc','session_end_utc','entry_seconds',
+                                                       'signal_policy','signal_source','reference_source','minimum_reference')}}
 
 
 class Handler(BaseHTTPRequestHandler):

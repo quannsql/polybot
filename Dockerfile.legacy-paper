@@ -1,0 +1,8 @@
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY requirements-paper.txt ./
+RUN pip install --no-cache-dir -r requirements-paper.txt
+COPY polymarket_bot ./polymarket_bot
+COPY collect_robust_paper.py collect_poly_paper.py research_polymarket_actual.py report_robust_paper.py legacy_protocol.json ./
+CMD ["python", "-B", "collect_robust_paper.py", "--protocol", "legacy_protocol.json", "--output-dir", "/app/legacy_forward", "--duration-seconds", "2419200"]

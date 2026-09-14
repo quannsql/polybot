@@ -11,6 +11,7 @@ import statistics
 import time
 
 from polymarket_bot.robustness import replay_fill, bankroll_replay
+from polymarket_bot.actual_research import cash_cost
 
 
 def block_interval(rows, first_day, last_day, block=3, repetitions=2000):
@@ -57,7 +58,11 @@ def report(path):
         windows=[dict(r) for r in db.execute('SELECT * FROM windows ORDER BY start_ms')]
         labels={r['slug']:dict(r) for r in db.execute('SELECT * FROM labels')}
         measurements={(r['slug'],r['policy']):json.loads(r['payload']) for r in db.execute('SELECT * FROM measurements')}
-        now_ms=int(time.time()*1000)
+        legacy=[]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy_candidates'").fetchone():
+            legacy=[dict(r) for r in db.execute('SELECT * FROM legacy_candidates')]
+        latest_ms=db.execute('SELECT MAX(received_ms) FROM events').fetchone()[0] or 0
+        now_ms=max(int(time.time()*1000),latest_ms,experiment['started_ms'])
         first=experiment['started_ms']//86_400_000
         last=now_ms//86_400_000
         window_signals={r['slug']:json.loads(r['signal']) if r['signal'] else {} for r in windows}
@@ -106,6 +111,23 @@ def report(path):
             a,b=indexed.get((slug,primary)),indexed.get((slug,baseline))
             if s.get('direction') and slug in labels and a and b and a['status']!='pending' and b['status']!='pending':
                 paired.append({'slug':slug,'opened_ms':a['opened_ms'],'pnl':(a['pnl'] or 0)-(b['pnl'] or 0)})
+        eligible=[r for r in legacy if r['eligible']]
+        confirmed=[r for r in eligible if r['slug'] in labels]
+        primary_fills=[indexed[(r['slug'],primary)] for r in confirmed
+                       if (r['slug'],primary) in indexed and indexed[(r['slug'],primary)]['status']=='settled']
+        assumed_pnl=0.
+        for r in confirmed:
+            payload=json.loads(r['payload'])
+            cost=cash_cost(payload['reference']['price']+protocol['price_padding'],payload['fee'])
+            assumed_pnl+=protocol['budget_usd']*((r['side']==labels[r['slug']]['winner'])/cost-1)
+        legacy_report={'eligible_candidates':len(eligible),'labelled_candidates':len(confirmed),
+            'direction_wins':sum(r['side']==labels[r['slug']]['winner'] for r in confirmed),
+            'direction_win_rate':sum(r['side']==labels[r['slug']]['winner'] for r in confirmed)/len(confirmed) if confirmed else None,
+            'primary_shadow_fills_settled':len(primary_fills),
+            'primary_zero_fill_or_capture_missing':len(confirmed)-len(primary_fills),
+            'primary_shadow_pnl':sum(r['pnl'] for r in primary_fills),
+            'legacy_assumed_ref_plus_1c_pnl_same_candidates':assumed_pnl,
+            'ineligible_reasons':dict(Counter(json.loads(r['payload']).get('reason') for r in legacy if not r['eligible']))}
         return {'status':'diagnostic_only_no_live_approval','protocol_hash':experiment['hash'],
             'protocol_id':protocol['id'],'primary_policy':primary,'generated_ms':now_ms,
             'elapsed_days':(now_ms-experiment['started_ms'])/86_400_000,
@@ -114,6 +136,7 @@ def report(path):
             'frozen_dca_signals':sum(bool(s.get('direction')) for s in window_signals.values()),
             'window_reasons':dict(Counter(r['reason'] for r in windows)),
             'replay_verified':replay_verified,'replay_mismatches':replay_mismatches,
+            'legacy_fixed_cohort':legacy_report if protocol.get('reference_source')=='prices-history' else None,
             'policies':output,'paired_dca_minus_favourite':{'n':len(paired),
                 'pnl_difference':sum(r['pnl'] for r in paired),
                 'mean_difference_block_95':block_interval(paired,first,last,protocol['bootstrap_block_days'])},
@@ -122,8 +145,10 @@ def report(path):
                 'Arrival REST book measured after target delay plus RTT; not an exact 250/500/1000ms exchange fill.',
                 'Bootstrap intervals are diagnostic and unreliable with few days or rare losses; zero observed losses is not zero risk.',
                 'All scenarios share markets; do not pool sample sizes or PnL. Continuous peeking does not establish significance.',
-                'Fixed boundary/08-22 UTC/11:30 rule experiment differs from old latest_5m paper and live continuous-window plus calibration.',
-                'No oracle prediction model is tested: Binance supplies signals; Polymarket confirms outcome labels.',
+                ('Old latest_5m/24h/11:30/reference>=0.85 eligibility; frozen ref+1c limit is an execution experiment, not an order type established by the old backtest.'
+                 if protocol.get('reference_source')=='prices-history' else
+                 'Fixed boundary/08-22 UTC/11:30 rule differs from old latest_5m strategy.'),
+                'Signal source: '+protocol.get('signal_source','binance')+'; only Polymarket confirms outcome labels. No oracle prediction model is tested.',
                 'No automatic calibration approval, historical holdout claim, or live deployment.'
             ]}
 
