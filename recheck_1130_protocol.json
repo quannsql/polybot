@@ -1,0 +1,17 @@
+{
+  "id": "legacy_1130_reconfirmation_exploration_v1",
+  "base": "legacy_protocol.json",
+  "scope": "Original 413 eligible market-direction pairs only. No side flips, new candidates, price threshold changes or deployment.",
+  "entry_seconds": 690,
+  "primary": "veto_new_opposite",
+  "variants": {
+    "original": "Keep original candidate without rechecking.",
+    "veto_new_opposite": "Veto if either newly closed 5m candle at T+5 or T+10 triggers an opposite DCA main signal. No new signal means retain.",
+    "require_new_same": "Latest fresh DCA event among T+5,T+10 must agree with original side; no new event means skip. There is no newly closed 15m candle before expiry.",
+    "same_branch_closed": "At T+10 main_5m must still meet routed band touch. For aux_short_15m recheck last CLOSED 15m band/pump state (unchanged since T).",
+    "same_branch_partial15_proxy": "Main_5m as above. For auxiliary short replace current 15m close by latest completed 1m close (available T+11), recompute BB20/2 from 19 completed 15m closes plus this partial close; retain original 4-bar pump comparison. Proxy, NOT an actual closed candle or exact 11:30 price."
+  },
+  "cost_padding_cents": [1, 2, 3],
+  "budgets": [5, 30],
+  "notes": "Hypotheses fixed before scoring this run. Previously explored history: neither period is a pristine holdout. Report winners sacrificed, losers removed, all variants and fee/slippage assumptions. Not a live readiness approval."
+}
