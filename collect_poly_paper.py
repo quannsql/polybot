@@ -30,6 +30,7 @@ POLICIES=[
     {'id':'bb15_open','source':'bb15','delay':30,'minimum_mid':0.,'cap':.58},
     {'id':'dca_late5_mid75','source':'dca','delay':330,'minimum_mid':.75,'cap':.99,'max_above_mid':.01},
     {'id':'dca_late10_mid85','source':'dca','delay':630,'minimum_mid':.85,'cap':.99,'max_above_mid':.01},
+    {'id':'dca_late1130_mid85','source':'dca','delay':690,'minimum_mid':.85,'cap':.99,'max_above_mid':.01},
     {'id':'dca_late10_mid75','source':'dca','delay':630,'minimum_mid':.75,'cap':.99,'max_above_mid':.01},
     {'id':'dca_late10_mid65','source':'dca','delay':630,'minimum_mid':.65,'cap':.99,'max_above_mid':.01},
 ]
@@ -200,17 +201,20 @@ async def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--duration-seconds',type=int,default=120)
     parser.add_argument('--poll-seconds',type=float,default=10)
+    parser.add_argument('--budget-usd',type=float,default=10)
     parser.add_argument('--output-dir',type=Path,default=Path('paper_market_capture'))
     parser.add_argument('--settle-only',action='store_true')
     args=parser.parse_args()
     if args.duration_seconds<=0 or args.poll_seconds<5:
         raise ValueError('Require a positive finite duration and poll >=5s')
-    if not args.output_dir.resolve().is_relative_to(Path('D:/polybot').resolve()):
+    if not 0 < args.budget_usd <= 30:
+        raise ValueError('Paper budget must be greater than zero and at most $30')
+    if not args.output_dir.resolve().is_relative_to(Path(__file__).resolve().parent):
         raise ValueError('Recorder must stay in Bot2')
     args.output_dir.mkdir(parents=True,exist_ok=True)
     ledger=Ledger(args.output_dir/'capture.sqlite3')
     api=PublicArchive(args.output_dir)
-    ledger.event('run_plan',None,{'policies':POLICIES,'budget_each':10,'duration_seconds':args.duration_seconds,
+    ledger.event('run_plan',None,{'policies':POLICIES,'budget_each':args.budget_usd,'duration_seconds':args.duration_seconds,
         'execution':'shadow only; no calibrated probability or live approval',
         'quote_freshness_ms':5000,'entry_tolerance_seconds':20})
     stream=None
@@ -244,7 +248,7 @@ async def main():
                 try:
                     if signals is None and 20<=elapsed<=45:
                         signals=await freeze_signals(api,ledger,start)
-                    market,fee,books=await snapshot_books(api,ledger,start)
+                    market,fee,books=await snapshot_books(api,ledger,start,budget=args.budget_usd)
                     elapsed=ledger.now()-start
                     for policy in POLICIES:
                         if not policy['delay']<=elapsed<=policy['delay']+20 or ledger.seen(slug,policy['id']):
@@ -259,7 +263,7 @@ async def main():
                             if (ask+bid)/2<dec(policy['minimum_mid']) or ask-bid>dec(.03):
                                 raise ValueError('Agreement or spread filter')
                             cap=min(dec(policy['cap']),(ask+bid)/2+dec(policy.get('max_above_mid',1)))
-                            fill=buy_depth(book,fee,budget=10,max_price=float(cap),now_ms=ledger.ms())
+                            fill=buy_depth(book,fee,budget=args.budget_usd,max_price=float(cap),now_ms=ledger.ms())
                             ledger.attempt(slug,policy['id'],side,fill=fill)
                         except (ValueError,KeyError,TypeError) as e:
                             ledger.attempt(slug,policy['id'],side,reason=str(e))
