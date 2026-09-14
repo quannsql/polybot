@@ -6,33 +6,13 @@ from importlib.metadata import PackageNotFoundError, version
 import json
 import os
 from pathlib import Path
-import re
 import time
 
 import httpx
 from polymarket_bot.actual_research import parse_market, fee_schedule, buy_depth
+from polymarket_bot.geography import geographic_check
 
 ROOT = Path(__file__).resolve().parent
-API_CLOSE_ONLY = {'AU','BY','BE','BI','BR','CF','CD','ET','FR','DE','IQ','IT','LB','LY','MM',
-                  'NZ','NI','KP','PL','RU','SG','SO','SK','SS','SD','TW','TH','GB','US','UM','VE','YE','ZW'}
-API_BLOCKED = {'IR','SY','CU','KP'}
-
-
-def geographic_check(payload):
-    """Current endpoint AND published API restriction snapshot; never assume allow."""
-    if not isinstance(payload, dict) or type(payload.get('blocked')) is not bool:
-        return {'status': 'unknown', 'new_order_network_check': False, 'reason': 'invalid geoblock response'}
-    country = payload.get('country'); region = payload.get('region')
-    if not isinstance(country, str) or not re.fullmatch('[A-Z]{2}', country):
-        return {'status': 'unknown', 'new_order_network_check': False, 'reason': 'missing country'}
-    subregion = (country == 'CA' and region in {'AB','BC','ON','QC'}) or (country == 'UA' and region in {'43','14','09'})
-    blocked = payload['blocked'] or country in API_CLOSE_ONLY | API_BLOCKED or subregion
-    return {'status': 'blocked_or_close_only' if blocked else 'network_check_passed',
-            'country': country, 'region': region, 'new_order_network_check': not blocked,
-            'nl_help_center_conflict_needs_review': country == 'NL',
-            'note': 'IP check is not account/user/legal eligibility. No IP addresses or credentials are written.'}
-
-
 def validate_profile(p):
     if p.get('schema') != 'polybot_trial_v1' or p.get('execution_mode') != 'disabled':
         raise ValueError('Only disabled preparation profiles are supported')
@@ -111,7 +91,7 @@ async def main():
         raise ValueError('Output must stay inside Bot2')
     profile = validate_profile(json.loads(args.profile.read_text(encoding='utf-8')))
     try:
-        sdk = version('polymarket-client')
+        sdk = version('py-clob-client-v2')
     except PackageNotFoundError:
         sdk = None
     checks = {} if args.offline else await inspect_public(profile)

@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import logging
+from decimal import Decimal, ROUND_DOWN
 from typing import Any
 
 from .config import Settings
+from .geography import geographic_check
 from .market_data import BinanceFeed
 from .models import jsonable
 from .paper_store import StateStore
@@ -56,7 +58,7 @@ class BotEngine:
                 self.store.mark_seen(market.slug)
                 logger.error("cannot verify geoblock in live mode: %s", exc)
                 return None
-        blocked = bool(geo.get("blocked", True))
+        blocked = not geographic_check(geo).get("new_order_network_check", False)
         if blocked and self.settings.mode == "live":
             self.store.log("live_blocked_geoblock", {"slug": market.slug, "geo": geo})
             self.store.mark_seen(market.slug)
@@ -100,22 +102,57 @@ class BotEngine:
             return event
         decision = self.risk.decide(market, book, signal)
         self.store.log("decision", {"market": market, "signal": signal, "book": book, "decision": decision})
-        self.store.mark_seen(market.slug)
         if decision is None:
+            self.store.mark_seen(market.slug)
             return event
         if decision.action == "buy" and self.settings.mode == "live":
             if (datetime.now(timezone.utc) - start).total_seconds() > self.settings.max_entry_delay_seconds:
                 self.store.log('entry_expired', {'slug': market.slug})
                 return event
-            response = await self.executor.buy(market.token_for(signal.direction), decision.stake_usd)
-            self.store.set_position(market.slug, {
-                "token_id": market.token_for(signal.direction),
-                "direction": signal.direction,
-                "stake_usd": decision.stake_usd,
-                "shares": decision.shares,
-                "order_response": response,
-            })
-            self.store.log("live_order_submitted", {"market": market, "decision": decision, "response": response})
+            if self.executor is None:
+                raise RuntimeError("live executor missing")
+            tick = market.tick_size or book.tick_size or Decimal("0.01")
+            cap = min(
+                Decimal(str(self.settings.live_max_price)),
+                decision.ask + Decimal(str(self.settings.live_price_slippage)),
+            )
+            cap = (cap / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+            attempt_id = self.store.reserve_live_attempt(
+                market.slug,
+                {"token_id": market.token_for(signal.direction), "direction": signal.direction,
+                 "stake_usd": decision.stake_usd, "max_price": cap},
+                self.settings.live_max_orders,
+            )
+            try:
+                # Recheck geography immediately before the irreversible call.
+                final_geo = await self.api.geoblock()
+                if not geographic_check(final_geo).get("new_order_network_check", False):
+                    raise RuntimeError("Polymarket geoblock changed before submission")
+                response = await self.executor.buy(
+                    market.token_for(signal.direction), decision.stake_usd, cap
+                )
+            except Exception as exc:
+                self.store.finish_live_attempt(attempt_id, "ambiguous_or_failed", {
+                    "error_type": type(exc).__name__, "error": str(exc)
+                })
+                self.store.mark_seen(market.slug)
+                raise
+            status = (
+                "filled" if response.get("filled")
+                else "rejected_or_unfilled" if response.get("reconciled")
+                else "accepted_pending_manual_reconciliation"
+            )
+            self.store.finish_live_attempt(attempt_id, status, response)
+            if response.get("filled") or not response.get("reconciled"):
+                self.store.set_position(market.slug, {
+                    "token_id": market.token_for(signal.direction),
+                    "direction": signal.direction,
+                    "stake_usd": decision.stake_usd,
+                    "shares": response.get("taking_amount", "0"),
+                    "making_amount": response.get("making_amount", "0"),
+                    "order_response": response,
+                })
+            self.store.log("live_order_result", {"market": market, "decision": decision, "response": response})
         elif decision.action == "buy":
             # Paper mode records the exact quote/risk calculation and never signs
             # or submits a CLOB order.
@@ -127,6 +164,7 @@ class BotEngine:
                 "paper": True,
             })
             self.store.log("paper_order", {"market": market, "decision": decision})
+        self.store.mark_seen(market.slug)
         return event
 
     async def run_forever(self) -> None:

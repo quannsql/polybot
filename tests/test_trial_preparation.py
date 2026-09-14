@@ -16,10 +16,9 @@ def test_published_api_restrictions_cannot_be_overridden_by_false_endpoint(count
     assert geographic_check({'blocked': False, 'country': country, 'region': ''})['new_order_network_check'] is False
 
 
-def test_netherlands_api_exception_is_not_eligibility_approval():
+def test_netherlands_is_denied_even_if_endpoint_says_unblocked():
     x = geographic_check({'blocked': False, 'country': 'NL', 'region': ''})
-    assert x['new_order_network_check'] is True
-    assert x['nl_help_center_conflict_needs_review'] is True
+    assert x['new_order_network_check'] is False
     assert geographic_check({'blocked': True, 'country': 'NL'})['new_order_network_check'] is False
 
 
@@ -37,16 +36,57 @@ def test_trial_profile_cannot_enable_live_or_raise_budget():
         validate_profile({**p, 'stake_usd_including_fee': 31})
 
 
-def test_legacy_live_path_cannot_be_accidentally_enabled():
+def test_live_path_cannot_be_accidentally_enabled():
     settings=Settings(mode='live',dry_run=False,live_confirmation='I_UNDERSTAND_LIVE_TRADING',
                       signer_private_key='fake_not_a_key')
-    with pytest.raises(ValueError, match='not ready'):
+    with pytest.raises(ValueError, match='Live mode is locked'):
         settings.validate()
-    executor=PolymarketLiveExecutor(settings)
-    with pytest.raises(RuntimeError, match='disabled'):
-        asyncio.run(executor.connect())
-    with pytest.raises(RuntimeError, match='disabled'):
-        asyncio.run(executor.buy('not-a-token', Decimal(30)))
+
+
+def test_live_canary_hard_cap_and_confirmation():
+    base = dict(mode='live', dry_run=False,
+                live_confirmation='I_UNDERSTAND_ONE_30_USD_ORDER_CAN_LOSE_ALL',
+                account_eligibility_confirmed=True,
+                signer_private_key='fake', wallet_address='0x'+'1'*40,
+                relayer_api_key='key', relayer_api_key_address='0x'+'2'*40)
+    Settings(**base).validate()
+    with pytest.raises(ValueError, match=r'hard \$30'):
+        Settings(**base, max_stake_usd=31).validate()
+
+
+def test_executor_rejects_more_than_thirty_without_network():
+    settings = Settings(max_stake_usd=30, live_max_price=.97)
+    executor = PolymarketLiveExecutor(settings)
+    executor.client = object()
+    with pytest.raises(RuntimeError, match=r'no more than \$30'):
+        asyncio.run(executor.buy('token', Decimal('30.01'), Decimal('.90')))
+
+
+def test_executor_uses_fok_price_and_spend_caps():
+    class Rejected:
+        ok = False
+        def model_dump(self, mode):
+            return {"ok": False, "code": "fok_not_filled", "message": "none"}
+
+    class Client:
+        def __init__(self):
+            self.kwargs = None
+        async def get_balance_allowance(self, **kwargs):
+            return type('Balance', (), {'balance': 30_000_000})()
+        async def place_market_order(self, **kwargs):
+            self.kwargs = kwargs
+            return Rejected()
+
+    settings = Settings(max_stake_usd=30, live_max_price=.97)
+    executor = PolymarketLiveExecutor(settings)
+    executor.client = Client()
+    result = asyncio.run(executor.buy('token', Decimal('30'), Decimal('.91')))
+    assert executor.client.kwargs == {
+        'token_id': 'token', 'side': 'BUY', 'amount': '30',
+        'max_spend': '30', 'max_price': '0.91', 'order_type': 'FOK'
+    }
+    assert result['reconciled'] is True
+    assert result['filled'] is False
 
 
 def test_thirty_dollars_includes_fee_and_walks_depth():

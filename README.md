@@ -1,12 +1,13 @@
 # Bot 2 — nghiên cứu BTC Up/Down 15m
 
 Bot2 nằm tại `D:\polybot`. Dữ liệu và code tham chiếu `D:\backtest` chỉ được đọc.
-Runtime hiện là paper/prototype; mặc định không ký hoặc gửi lệnh.
+Runtime mặc định là paper và không ký/gửi lệnh. Executor canary CLOB V2 nằm
+riêng trong `Dockerfile.live`; xem [LIVE_TRIAL_GUIDE.md](LIVE_TRIAL_GUIDE.md).
 
 ## Deploy Railway từ repository này
 
-Repository chứa cả code bot và bộ kiểm tra; **không có bản live đã hoàn thiện**.
-Không thêm key để bật live: executor cũ đang bị khóa có chủ đích.
+Repository chứa paper bot, preflight và live canary có nhiều khóa an toàn.
+Không dùng `Dockerfile.bot` để live; file đó chỉ capture paper hữu hạn.
 
 | Mục đích | Railway variable | Hành vi |
 |---|---|---|
@@ -23,12 +24,11 @@ Các file kết quả backtest, capture, môi trường Python và secrets khôn
 lên Git. Script nghiên cứu lịch sử cần dữ liệu local riêng; chúng không tự tái
 tạo đầy đủ kết quả trên Railway chỉ từ repository.
 
-## Chuẩn bị thử $30 — chưa bật live
+## Chuẩn bị thử $30
 
-[Hướng dẫn $30, ví Google, API và Railway](TRIAL_30USD_READINESS.md).
-Đã chuẩn bị preflight read-only và môi trường `.venv-trial`; đường gửi lệnh
-live cũ đã vô hiệu hóa vì thiếu trần giá/đối soát fill. Không chỉ thêm khóa
-rồi bật `POLYMARKET_MODE=live`. Bot1 không thay đổi.
+[Hướng dẫn live canary và các biến tài khoản](LIVE_TRIAL_GUIDE.md). Tài liệu
+[readiness cũ](TRIAL_30USD_READINESS.md) được giữ làm dấu vết audit trước khi
+executor V2 được bổ sung. Bot1 không thay đổi.
 
 ```powershell
 .\.venv-trial\Scripts\python.exe -B preflight_trial.py
@@ -138,14 +138,15 @@ auxiliary bật, `POLYMARKET_SIGNAL_POLICY=boundary`. Có thể chọn `latest_5
 24h dùng giờ bắt đầu/kết thúc cùng bằng 0. Đây là lựa chọn nghiên cứu, chưa
 xác nhận trùng cấu hình Bot1 trên server.
 
-Engine dùng lõi `polymarket_bot/signal_grid.py` chung với nghiên cứu. Đợi 20
-giây sau biên để nến đóng được công bố, chỉ nhận entry trong 45 giây đầu.
+Engine dùng lõi `polymarket_bot/signal_grid.py` chung với nghiên cứu. Cấu hình
+mặc định giữ hướng đầu window và xét entry từ T+10:30 tới T+11:30.
 Log nằm tại `logs/decisions.jsonl`; state tại `logs/paper_state.json`.
 
 Thiếu calibration hoặc `approved` chưa true thì chỉ ghi tín hiệu/quyết định.
 Không dùng calibration của policy/phiên/nguồn giá khác mà chưa kiểm định lại.
-Chưa có paper ledger settlement đầy đủ hoặc đối soát lệnh live hoàn chỉnh.
-Live adapter cần kiểm chứng thêm trước triển khai; nghiên cứu không bật live.
+Live canary dùng SDK V2, FOK, trần giá/spend, journal trước submit và chờ
+settlement. Tuy nhiên calibration chiến lược mẫu vẫn không được phê duyệt;
+không nhầm readiness thực thi với bằng chứng có lợi nhuận.
 
 ## Kiểm thử
 

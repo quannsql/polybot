@@ -7,6 +7,17 @@ import os
 
 from polymarket_bot.config import Settings
 from polymarket_bot.engine import BotEngine
+from polymarket_bot.oci_vault import load_oci_vault_env_if_configured
+
+
+async def _run_once(engine: BotEngine) -> None:
+    if engine.executor is not None:
+        await engine.executor.connect()
+    try:
+        await engine.run_once()
+    finally:
+        if engine.executor is not None:
+            await engine.executor.close()
 
 
 def main() -> None:
@@ -18,6 +29,7 @@ def main() -> None:
         load_dotenv()
     except ImportError:
         pass
+    load_oci_vault_env_if_configured()
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -25,7 +37,7 @@ def main() -> None:
     settings = Settings.from_env()
     engine = BotEngine(settings)
     if args.once:
-        asyncio.run(engine.run_once())
+        asyncio.run(_run_once(engine))
     else:
         asyncio.run(engine.run_forever())
 

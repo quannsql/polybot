@@ -5,6 +5,7 @@ from collections import deque
 from contextlib import suppress
 import json
 import math
+import os
 from pathlib import Path
 import time
 
@@ -176,8 +177,9 @@ async def main():
         raise ValueError('Choose a bounded duration of 1..86400 seconds')
     if not math.isfinite(args.budget_usd) or not 0 < args.budget_usd <= 30:
         raise ValueError('Paper trial budget must be finite and in (0,30] USD')
-    if not args.output_dir.resolve().is_relative_to(Path('D:/polybot').resolve()):
-        raise ValueError('Output must stay in Bot2')
+    allowed_root = Path(os.getenv('POLYBOT_ALLOWED_DATA_ROOT', str(Path.cwd()))).resolve()
+    if not args.output_dir.resolve().is_relative_to(allowed_root):
+        raise ValueError(f'Output must stay inside {allowed_root}')
     args.output_dir.mkdir(exist_ok=True, parents=True)
     ledger = CaptureLedger(args.output_dir/'capture.sqlite3'); api = PublicArchive(args.output_dir)
     ledger.db.execute('CREATE TABLE IF NOT EXISTS advanced_observations(slug TEXT, delay INTEGER, side TEXT, payload TEXT, PRIMARY KEY(slug,delay,side))')

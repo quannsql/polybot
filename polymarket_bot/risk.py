@@ -53,6 +53,12 @@ class RiskEngine:
                 Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
                 Decimal("0"), Decimal("0"), "skip", "spread_above_limit",
             )
+        if ask < Decimal(str(self.settings.min_entry_price)):
+            return TradeDecision(
+                market.slug, signal.direction, signal.source, ask, spread,
+                Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
+                Decimal("0"), Decimal("0"), "skip", "price_below_entry_filter",
+            )
         p = self.probability(signal)
         if p is None:
             return TradeDecision(
@@ -83,6 +89,10 @@ class RiskEngine:
             Decimal(str(self.settings.bankroll_usd))
             * Decimal(str(self.settings.kelly_fraction)) * max(Decimal("0"), kelly),
         )
+        if self.settings.mode == "live" and self.settings.live_fixed_stake_usd:
+            # A canary uses fixed sizing only after the positive-edge checks.
+            stake = min(Decimal(str(self.settings.live_fixed_stake_usd)),
+                        Decimal(str(self.settings.max_stake_usd)))
         # Respect both CLOB depth and minimum order size.  Do not round a
         # positive edge into an accidental over-spend.
         stake = min(stake, book.ask_size * ask)

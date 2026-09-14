@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+import importlib.metadata
 import json
 import re
 from typing import Any
@@ -54,7 +56,7 @@ class PolymarketPublic:
         self.timeout = timeout
 
     async def _get(self, url: str, **params: Any) -> Any:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
             response = await client.get(url, params=params or None)
             response.raise_for_status()
             return response.json()
@@ -141,21 +143,116 @@ class PolymarketPublic:
 
 
 class PolymarketLiveExecutor:
-    """Disabled legacy adapter; retained interface, no submission implementation.
-
-    The old market-order path had no verified price cap or fill reconciliation.
-    Adding credentials must not accidentally activate that prototype.
-    """
+    """Production V2, one-order canary executor with price/spend protection."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
         self.client: Any = None
 
     async def connect(self) -> None:
-        raise RuntimeError('Legacy live executor disabled pending capped order execution and fill reconciliation')
+        if self.client is not None:
+            return
+        async with httpx.AsyncClient(timeout=10, trust_env=False) as public_client:
+            clock_response = await public_client.get(f"{self.settings.clob_url}/time")
+            clock_response.raise_for_status()
+            server_time = clock_response.json()
+        if not isinstance(server_time, (int, float)):
+            raise RuntimeError("Invalid CLOB server clock response")
+        offset = float(server_time) - datetime.now(timezone.utc).timestamp()
+        if abs(offset) > 30:
+            raise RuntimeError(f"Server clock offset too large ({offset:.1f}s)")
+        try:
+            version = importlib.metadata.version("py-clob-client-v2")
+            from polymarket import AsyncSecureClient, RelayerApiKey
+        except (ImportError, importlib.metadata.PackageNotFoundError) as exc:
+            raise RuntimeError("Install requirements-live-sdk.txt (CLOB V2)") from exc
+        if not version.startswith("1."):
+            raise RuntimeError(f"Unsupported py-clob-client-v2 version {version}")
+        relayer = RelayerApiKey(
+            key=self.settings.relayer_api_key,
+            address=self.settings.relayer_api_key_address,
+        )
+        client = await AsyncSecureClient.create(
+            private_key=self.settings.signer_private_key,
+            wallet=self.settings.wallet_address,
+            api_key=relayer,
+        )
+        if str(client.wallet).lower() != str(self.settings.wallet_address).lower():
+            await client.close()
+            raise RuntimeError("SDK resolved a different Polymarket wallet")
+        if (self.settings.expected_wallet_type
+                and client.wallet_type != self.settings.expected_wallet_type):
+            actual = client.wallet_type
+            await client.close()
+            raise RuntimeError(f"Wallet type mismatch: SDK resolved {actual}")
+        balance = await client.get_balance_allowance(asset_type="COLLATERAL")
+        required = int(Decimal(str(self.settings.live_fixed_stake_usd)) * 1_000_000)
+        if balance.balance < required:
+            await client.close()
+            available = Decimal(balance.balance) / Decimal(1_000_000)
+            raise RuntimeError(f"Insufficient pUSD balance for canary: {available} available")
+        self.client = client
 
-    async def buy(self, token_id: str, stake_usd: Decimal) -> Any:
-        raise RuntimeError('Legacy market-order submission disabled; no approved live trial executor')
+    async def buy(self, token_id: str, stake_usd: Decimal, max_price: Decimal) -> dict[str, Any]:
+        if self.client is None:
+            raise RuntimeError("Live executor is not connected")
+        if not Decimal("0") < stake_usd <= Decimal("30"):
+            raise RuntimeError("Live order must be greater than $0 and no more than $30")
+        if not Decimal("0") < max_price <= Decimal(str(self.settings.live_max_price)):
+            raise RuntimeError("Live order price exceeds configured cap")
+        balance = await self.client.get_balance_allowance(asset_type="COLLATERAL")
+        if balance.balance < int(stake_usd * 1_000_000):
+            raise RuntimeError("Insufficient pUSD balance immediately before order")
+
+        # FOK leaves no resting remainder. max_spend lets the V2 SDK reduce the
+        # notional for its current fee schedule so the all-in target is capped.
+        response = await self.client.place_market_order(
+            token_id=token_id,
+            side="BUY",
+            amount=str(stake_usd),
+            max_spend=str(stake_usd),
+            max_price=str(max_price),
+            order_type="FOK",
+        )
+        result = response.model_dump(mode="json")
+        if not response.ok:
+            result["reconciled"] = True
+            result["filled"] = False
+            return result
+        if response.status == "live":
+            await self.client.cancel_order(order_id=str(response.order_id))
+            raise RuntimeError("Unexpected resting FOK order was cancelled")
+        result["filled"] = bool(response.trade_ids)
+        result["reconciled"] = bool(response.trade_ids)
+        if response.status == "delayed" and not response.trade_ids:
+            # A delayed response can execute after the HTTP response. Query the
+            # accepted order; never assume it was unfilled and never resubmit.
+            for _ in range(10):
+                await asyncio.sleep(1)
+                try:
+                    order = await self.client.get_order(order_id=str(response.order_id))
+                except Exception:
+                    continue
+                result["order_snapshot"] = order.model_dump(mode="json")
+                if order.size_matched > 0:
+                    result["filled"] = True
+                    result["reconciled"] = True
+                    break
+                if order.status.lower() in {"cancelled", "canceled", "expired", "unmatched"}:
+                    result["filled"] = False
+                    result["reconciled"] = True
+                    break
+        if response.trade_ids:
+            try:
+                hashes = await self.client.wait_for_order_fill_settlement(response, timeout_s=60)
+                result["settlement_hashes"] = [str(item) for item in hashes]
+                result["settlement_confirmed"] = True
+            except Exception as exc:
+                # Submission succeeded. Never retry: the journal requires manual
+                # reconciliation when settlement confirmation is ambiguous.
+                result["settlement_confirmed"] = False
+                result["settlement_error"] = type(exc).__name__
+        return result
 
     async def close(self) -> None:
         if self.client is not None:
