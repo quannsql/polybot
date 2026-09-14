@@ -58,9 +58,15 @@ def snapshot(path=DB):
         end_ms = None
         if plan:
             end_ms = plan['received_ms'] + json.loads(plan['payload']).get('duration_seconds', 0)*1000
+        robustness = None
+        report_path=Path(os.environ.get('ROBUST_REPORT','/robust/robustness_report.json'))
+        try:
+            robustness=json.loads(report_path.read_text(encoding='utf-8'))
+        except (OSError,ValueError):
+            pass
         return {'now_ms': int(time.time()*1000), 'latest': dict(recent) if recent else None,
                 'policies': policies, 'trades': trades, 'signal': signal,
-                'errors': errors, 'planned_end_ms': end_ms}
+                'errors': errors, 'planned_end_ms': end_ms, 'robustness':robustness}
 
 
 class Handler(BaseHTTPRequestHandler):

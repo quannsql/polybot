@@ -1,0 +1,23 @@
+{
+  "id": "dca_boundary_1130_ask85_v1",
+  "mode": "research_paper_only",
+  "signal_policy": "boundary",
+  "session_start_utc": 8,
+  "session_end_utc": 22,
+  "entry_seconds": 690,
+  "entry_tolerance_ms": 2000,
+  "minimum_ask": 0.85,
+  "maximum_price": 0.97,
+  "price_padding": 0.01,
+  "maximum_spread": 0.03,
+  "maximum_quote_age_ms": 1500,
+  "budget_usd": 30,
+  "initial_bankroll_usd": 50,
+  "latency_ms": [250, 500, 1000],
+  "depth_fractions": [1.0, 0.5],
+  "primary_policy": "dca_500ms_depth100",
+  "validation_days": 28,
+  "bootstrap_block_days": 3,
+  "bootstrap_seed": 20260914,
+  "notes": "Freeze before collecting new validation data. Review after 7 days is diagnostic only; final review at 28 days. No automatic approval or live activation. REST arrival observations include measured request RTT; target delay is not exact exchange execution latency. Market-favourite baseline shares the same clock and price filters; paired comparison only within frozen DCA-signal windows."
+}
