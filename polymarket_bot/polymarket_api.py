@@ -162,12 +162,12 @@ class PolymarketLiveExecutor:
         if abs(offset) > 30:
             raise RuntimeError(f"Server clock offset too large ({offset:.1f}s)")
         try:
-            version = importlib.metadata.version("py-clob-client-v2")
+            version = importlib.metadata.version("polymarket-client")
             from polymarket import AsyncSecureClient, RelayerApiKey
         except (ImportError, importlib.metadata.PackageNotFoundError) as exc:
             raise RuntimeError("Install requirements-live-sdk.txt (CLOB V2)") from exc
-        if not version.startswith("1."):
-            raise RuntimeError(f"Unsupported py-clob-client-v2 version {version}")
+        if version != "0.10.0":
+            raise RuntimeError(f"Unsupported polymarket-client version {version}")
         relayer = RelayerApiKey(
             key=self.settings.relayer_api_key,
             address=self.settings.relayer_api_key_address,

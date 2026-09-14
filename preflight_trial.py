@@ -91,7 +91,7 @@ async def main():
         raise ValueError('Output must stay inside Bot2')
     profile = validate_profile(json.loads(args.profile.read_text(encoding='utf-8')))
     try:
-        sdk = version('py-clob-client-v2')
+        sdk = version('polymarket-client')
     except PackageNotFoundError:
         sdk = None
     checks = {} if args.offline else await inspect_public(profile)

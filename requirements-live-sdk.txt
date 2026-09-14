@@ -1,3 +1,3 @@
-# Production CLOB V2 SDK. Installing it alone does NOT enable live trading.
-py-clob-client-v2==1.1.0
+# Official unified Polymarket Python SDK. Installing it alone does NOT enable live trading.
+polymarket-client==0.10.0
 oci==2.185.2
