@@ -15,7 +15,7 @@ sudo docker run -d --name polybot-dashboard --restart unless-stopped \
   --security-opt no-new-privileges --memory 192m --cpus 0.5 \
   --log-opt max-size=5m --log-opt max-file=2 \
   -e LIVE_MODE_ENABLED=1 \
-  -e 'LIVE_STRATEGY=DCA legacy · 12:30 · strong loss gate' \
+  -e 'LIVE_STRATEGY=DCA legacy · 12:30 · gate B (slope15 + Z0.75)' \
   -e LIVE_STAKE_USD=20 -e LIVE_BANKROLL_USD=50 \
   -e LIVE_ENTRY_SECONDS=750 -e LIVE_MAX_ATTEMPTS=1 \
   -v polybot-paper-data:/data:ro \

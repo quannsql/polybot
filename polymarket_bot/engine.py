@@ -17,7 +17,7 @@ from .paper_store import StateStore
 from .polymarket_api import MarketUnavailable, PolymarketLiveExecutor, PolymarketPublic
 from .risk import RiskEngine
 from .signal import snapshot
-from .entry_gates import PROFILE as STRONG_GATE_PROFILE, evaluate as evaluate_entry_gate
+from .entry_gates import SUPPORTED_PROFILES as GATE_PROFILES, evaluate as evaluate_entry_gate
 
 logger = logging.getLogger("polymarket_bot")
 
@@ -33,7 +33,7 @@ class BotEngine:
         self.peer_feed = (
             LighterFeed(settings.state_path.parent / "lighter_eth_minutes.sqlite3",
                         symbol="ETH", history_days=4)
-            if settings.entry_gate_profile == STRONG_GATE_PROFILE else None
+            if settings.entry_gate_profile in GATE_PROFILES else None
         )
         self.api = PolymarketPublic(settings)
         self.store = StateStore(settings.state_path, settings.decision_log_path)
@@ -122,17 +122,18 @@ class BotEngine:
             self.store.mark_seen(market.slug)
             return event
 
-        if self.settings.entry_gate_profile == STRONG_GATE_PROFILE:
+        if self.settings.entry_gate_profile in GATE_PROFILES:
             try:
                 gate = evaluate_entry_gate(
                     self.feed.gate_minutes(start + timedelta(minutes=12)),
                     self.peer_feed.gate_minutes(start + timedelta(minutes=12)),
                     start=start, signal_at=signal.signal_at,
                     side=signal.direction, source=signal.source,
+                    profile=self.settings.entry_gate_profile,
                 )
             except Exception as exc:
                 self.store.log("entry_gate_unavailable", {
-                    "slug": market.slug, "profile": STRONG_GATE_PROFILE,
+                    "slug": market.slug, "profile": self.settings.entry_gate_profile,
                     "error_type": type(exc).__name__, "error": str(exc),
                 })
                 logger.warning("strong entry gate unavailable for %s: %s", market.slug, exc)

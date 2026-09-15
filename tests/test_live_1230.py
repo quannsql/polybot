@@ -10,6 +10,7 @@ from polymarket_bot.engine import BotEngine
 from polymarket_bot.models import Book, Market, SignalSnapshot
 from polymarket_bot.polymarket_api import PolymarketLiveExecutor
 from polymarket_bot.risk import RiskEngine
+from polymarket_bot.entry_gates import PROFILE_B
 
 
 def live_settings(**changes):
@@ -107,3 +108,27 @@ def test_executor_cannot_exceed_twenty_even_if_called_directly():
     executor.client = object()
     with pytest.raises(RuntimeError, match=r'no more than \$20'):
         asyncio.run(executor.buy('token', Decimal('20.01'), Decimal('.90')))
+
+
+def test_variant_b_requires_its_own_exact_approval():
+    settings = live_settings(entry_gate_profile=PROFILE_B)
+    settings.validate()
+    _, signal = objects()
+    assert RiskEngine(settings, approval()).legacy_approval(signal) is None
+    assert RiskEngine(settings, approval() | {'entry_gate_profile': PROFILE_B}).legacy_approval(signal) is not None
+
+
+def test_deployed_variant_b_profile_matches_approval_and_risk_limits():
+    import json
+    from pathlib import Path
+    root = Path(__file__).parents[1]
+    document = json.loads((root/'live_1230_strategy_approval.json').read_text())
+    assert document['entry_gate_profile'] == PROFILE_B
+    settings = live_settings(entry_gate_profile=PROFILE_B)
+    _, signal = objects()
+    assert RiskEngine(settings, document).legacy_approval(signal) is not None
+    deploy = (root/'deploy_live_oracle.sh').read_text()
+    assert f'POLYMARKET_ENTRY_GATE_PROFILE={PROFILE_B}\n' in deploy
+    for line in ('POLYMARKET_LIVE_FIXED_STAKE_USD=20', 'POLYMARKET_BANKROLL_USD=50',
+                 'POLYMARKET_LIVE_MAX_ORDERS=1', 'POLYMARKET_MIN_ENTRY_PRICE=0.85'):
+        assert line+'\n' in deploy

@@ -151,7 +151,8 @@ class Settings:
             raise ValueError("POLYMARKET_DATA_SOURCE must be binance or lighter")
         if self.execution_strategy not in {"calibrated_edge", "legacy_1230_ref85"}:
             raise ValueError("Unknown POLYMARKET_EXECUTION_STRATEGY")
-        if self.entry_gate_profile not in {"none", "q1.5_z1.25_memory_old_signal_aux_shock"}:
+        from .entry_gates import SUPPORTED_PROFILES
+        if self.entry_gate_profile not in {"none", *SUPPORTED_PROFILES}:
             raise ValueError("Unknown POLYMARKET_ENTRY_GATE_PROFILE")
         if self.entry_gate_profile != "none" and (
             self.execution_strategy != "legacy_1230_ref85" or self.data_source != "lighter"
