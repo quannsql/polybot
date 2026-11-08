@@ -4,6 +4,8 @@ from decimal import Decimal, InvalidOperation
 import os
 from pathlib import Path
 
+from .polygon_rpc import DEFAULT_POLYGON_RPC_URL, rpc_host
+
 STRATEGY = 'twap60_spot_1400_v1'
 CONFIRMATION = 'I_UNDERSTAND_TWAP_20_USD_LIVE_TEST'
 
@@ -33,6 +35,7 @@ class TwapSettings:
     gamma_url: str = 'https://gamma-api.polymarket.com'
     clob_url: str = 'https://clob.polymarket.com'
     geoblock_url: str = 'https://polymarket.com/api/geoblock'
+    polygon_rpc_url: str = field(default=DEFAULT_POLYGON_RPC_URL, repr=False)
     decision_delay_seconds: int = 840
     max_entry_delay_seconds: int = 845
     minimum_lead_bps: Decimal = Decimal('5')
@@ -66,6 +69,7 @@ class TwapSettings:
     def from_env(cls):
         mode = os.getenv('POLYMARKET_MODE','paper').lower().strip()
         settings = cls(mode=mode,
+            polygon_rpc_url=os.getenv('POLYMARKET_POLYGON_RPC_URL', DEFAULT_POLYGON_RPC_URL).strip(),
             execution_strategy=os.getenv('POLYMARKET_EXECUTION_STRATEGY', STRATEGY).strip(),
             decision_delay_seconds=number('POLYMARKET_DECISION_DELAY_SECONDS',840,True),
             max_entry_delay_seconds=number('POLYMARKET_MAX_ENTRY_DELAY_SECONDS',845,True),
@@ -99,6 +103,7 @@ class TwapSettings:
         return settings
 
     def validate(self):
+        rpc_host(self.polygon_rpc_url)
         if self.mode not in {'paper','live'} or self.execution_strategy != STRATEGY:
             raise ValueError(f'The replacement runtime requires POLYMARKET_EXECUTION_STRATEGY={STRATEGY}; remove the old profile')
         if self.decision_delay_seconds != 840 or not 840 <= self.max_entry_delay_seconds <= 845:

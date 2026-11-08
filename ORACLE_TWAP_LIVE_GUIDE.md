@@ -248,6 +248,18 @@ Lệnh kiểm tra account và stream trong70s, không gửi BUY/SELL. Kết qu�
 và minute-valid, geography cho phép new orders. `opening_seen_during_probe:false`
 có thể bình thường nếu probe không đi qua đầu market.
 
+`check` cũng đọc trading approvals trên Polygon, với cùng RPC và batch `eth_call`
+mà live sử dụng. Cần `polygon_rpc.approvals_read_ok:true`, `chain_id:137`.
+Số approvals còn thiếu không phải lỗi RPC; lúc start, SDK sẽ cấp approvals nếu
+cần. Lệnh check chỉ đọc approvals, không cấp mới.
+
+Nếu log cũ báo `polygon.drpc.org` bị Cloudflare trả 400: dừng bot, lấy commit mới
+từ branch `codex/twap-railway`, build lại image, rồi chạy check trước start.
+RPC mặc định mới là `https://polygon.publicnode.com`. Có thể đặt
+`POLYMARKET_POLYGON_RPC_URL=https://tenderly.rpc.polygon.community` trong
+`/opt/polybot/live/twap.env` nếu cần thử RPC khác. Chạy lại check từ chính VM.
+Đây là đường đọc Polygon, không thay đổi quy tắc geography của Polymarket.
+
 Nếu chưa có Vault hoạt động, dùng file account riêng trên server:
 
 ```bash

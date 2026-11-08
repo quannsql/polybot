@@ -124,7 +124,7 @@ case "$ACTION" in
       --pids-limit 128 --memory 512m --cpus 1 --tmpfs /tmp:rw,noexec,nosuid,size=64m \
       --log-opt max-size=10m --log-opt max-file=5 \
       "${ENV_ARGS[@]}" -v "$VOLUME:/data" "$IMAGE"
-    echo 'TWAP live started. Missing opening waits for the next full market. Up to5 lifetime submissions, $20 target each.'
+    echo 'TWAP container launched. Check logs for TWAP runtime started before expecting orders. Missing opening waits for the next full market.'
     ;;
   paper)
     choose_volume; environment_args

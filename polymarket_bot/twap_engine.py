@@ -10,6 +10,7 @@ import time
 
 from .geography import geographic_check
 from .polymarket_api import PolymarketLiveExecutor
+from .polygon_rpc import check_polygon_approvals
 from .twap_config import STRATEGY
 from .twap_execution import TwapPublic,reference_cap,check_book,check_signed
 from .twap_feed import ChainlinkFeed
@@ -54,7 +55,12 @@ class TwapBot:
         if self.settings.mode == 'live' and check_trading_ready:
             # Perform allowance work before the entry window, never by retrying
             # a post after the signal/quote guards have expired.
-            await self.executor.client.setup_trading_approvals()
+            approvals = await check_polygon_approvals(self.executor.client)
+            if approvals['missing_erc20'] or approvals['missing_erc1155']:
+                await self.executor.client.setup_trading_approvals()
+            self.store.log('polygon_rpc_ready', approvals)
+            logger.info('Polygon RPC %s: approvals checked on chain %s',
+                        approvals['host'], approvals['chain_id'])
         if collect_prices:
             self.feed.start(self.executor.client)
         self.store.log('twap_started',dict(mode=self.settings.mode,strategy=STRATEGY,

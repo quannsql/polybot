@@ -10,6 +10,7 @@ import time
 
 from polymarket_bot.geography import geographic_check
 from polymarket_bot.oci_vault import load_oci_vault_env_if_configured
+from polymarket_bot.polygon_rpc import check_polygon_approvals, rpc_host
 from polymarket_bot.polymarket_api import PolymarketLiveExecutor
 from polymarket_bot.twap_config import TwapSettings,STRATEGY
 from polymarket_bot.twap_execution import TwapPublic
@@ -74,6 +75,14 @@ async def check(args):
             allowance_count=len(balance.allowances),
             note='CLOB keys and signer material are not printed. No trading approvals changed by this check.')
         output['sdk_version'] = importlib.metadata.version('polymarket-client')
+        if settings.mode == 'live':
+            try:
+                output['polygon_rpc'] = await check_polygon_approvals(executor.client)
+            except RuntimeError as error:
+                output['polygon_rpc'] = dict(host=rpc_host(settings.polygon_rpc_url),
+                                             approvals_read_ok=False, error=str(error))
+                print(json.dumps(output, indent=2))
+                raise
         if not args.account_only:
             probe = ProbeStore(); feed = ChainlinkFeed(probe)
             feed.start(executor.client)

@@ -13,6 +13,7 @@ import httpx
 
 from .config import Settings
 from .models import Book, Direction, Market
+from .polygon_rpc import sdk_environment
 
 
 class MarketUnavailable(RuntimeError):
@@ -208,10 +209,13 @@ class PolymarketLiveExecutor:
             key=self.settings.relayer_api_key,
             address=self.settings.relayer_api_key_address,
         )
+        rpc_url = getattr(self.settings, 'polygon_rpc_url', None)
+        environment = {'environment': sdk_environment(rpc_url)} if rpc_url else {}
         client = await AsyncSecureClient.create(
             private_key=self.settings.signer_private_key,
             wallet=self.settings.wallet_address,
             api_key=relayer,
+            **environment,
         )
         if str(client.wallet).lower() != str(self.settings.wallet_address).lower():
             await client.close()

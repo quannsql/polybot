@@ -34,6 +34,8 @@ def main() -> None:
         level=os.getenv("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    # Provider URL paths/queries can contain keys. Avoid logging HTTP URLs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     settings = Settings.from_env()
     engine = BotEngine(settings)
     if args.once:
