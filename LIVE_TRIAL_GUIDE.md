@@ -1,3 +1,8 @@
+# Tài liệu triển khai cũ — đã chuyển sang TWAP
+
+Dùng [ORACLE_TWAP_LIVE_GUIDE.md](ORACLE_TWAP_LIVE_GUIDE.md) cho runtime hiện tại.
+Nội dung phía dưới giữ để đối chiếu lịch sử, không dùng để triển khai bản mới.
+
 # Bot2 — triển khai canary live tối đa $30
 
 Bot1 trong `D:\backtest` không bị sửa hoặc dừng. Bot2 dùng CLOB V2 SDK,

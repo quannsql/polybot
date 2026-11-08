@@ -1,8 +1,9 @@
 FROM python:3.12-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OCI_POLYBOT_USE_INSTANCE_METADATA=1
-COPY requirements-paper.txt requirements-live-sdk.txt ./
-RUN pip install --no-cache-dir -r requirements-paper.txt -r requirements-live-sdk.txt
+COPY requirements-twap.txt requirements-live-sdk.txt ./
+RUN pip install --no-cache-dir -r requirements-twap.txt -r requirements-live-sdk.txt
 COPY polymarket_bot ./polymarket_bot
-COPY run_bot.py verify_live_account.py live_1230_strategy_approval.json ./
+COPY run_bot.py verify_live_account.py verify_twap_runtime.py manage_twap.py ./
+RUN python -B -m compileall -q polymarket_bot run_bot.py verify_twap_runtime.py manage_twap.py
 CMD ["python", "-B", "run_bot.py"]

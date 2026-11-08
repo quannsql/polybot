@@ -17,9 +17,9 @@ def test_published_api_restrictions_cannot_be_overridden_by_false_endpoint(count
     assert geographic_check({'blocked': False, 'country': country, 'region': ''})['new_order_network_check'] is False
 
 
-def test_netherlands_is_denied_even_if_endpoint_says_unblocked():
+def test_netherlands_api_requires_explicit_unblocked_endpoint():
     x = geographic_check({'blocked': False, 'country': 'NL', 'region': ''})
-    assert x['new_order_network_check'] is False
+    assert x['new_order_network_check'] is True
     assert geographic_check({'blocked': True, 'country': 'NL'})['new_order_network_check'] is False
 
 

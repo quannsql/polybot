@@ -5,6 +5,9 @@
 __pycache__
 **/__pycache__
 .pytest_cache
+data
+dist
+tests
 logs
 *_capture*
 actual_market_research_*

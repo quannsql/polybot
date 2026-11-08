@@ -118,7 +118,7 @@ def test_variant_b_requires_its_own_exact_approval():
     assert RiskEngine(settings, approval() | {'entry_gate_profile': PROFILE_B}).legacy_approval(signal) is not None
 
 
-def test_deployed_variant_b_profile_matches_approval_and_risk_limits():
+def test_historical_variant_b_approval_is_preserved_but_deployment_is_now_twap():
     import json
     from pathlib import Path
     root = Path(__file__).parents[1]
@@ -128,7 +128,10 @@ def test_deployed_variant_b_profile_matches_approval_and_risk_limits():
     _, signal = objects()
     assert RiskEngine(settings, document).legacy_approval(signal) is not None
     deploy = (root/'deploy_live_oracle.sh').read_text()
-    assert f'POLYMARKET_ENTRY_GATE_PROFILE={PROFILE_B}\n' in deploy
+    assert 'deploy_twap_oracle.sh' in deploy
+    runtime = (root/'.env.live.example').read_text()
+    assert 'POLYMARKET_EXECUTION_STRATEGY=twap60_spot_1400_v1\n' in runtime
+    assert 'POLYMARKET_ENTRY_GATE_PROFILE=' not in runtime
     for line in ('POLYMARKET_LIVE_FIXED_STAKE_USD=20', 'POLYMARKET_BANKROLL_USD=50',
-                 'POLYMARKET_LIVE_MAX_ORDERS=1', 'POLYMARKET_MIN_ENTRY_PRICE=0.85'):
-        assert line+'\n' in deploy
+                 'POLYMARKET_LIVE_MAX_ORDERS=5', 'POLYMARKET_MIN_ENTRY_PRICE=0.85'):
+        assert line+'\n' in runtime

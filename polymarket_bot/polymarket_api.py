@@ -185,7 +185,7 @@ class PolymarketLiveExecutor:
         self._balance = 0
         self._balance_checked_at = 0.0
 
-    async def connect(self) -> None:
+    async def connect(self, *, check_balance: bool = True) -> None:
         if self.client is not None:
             return
         async with httpx.AsyncClient(timeout=10, trust_env=False) as public_client:
@@ -202,7 +202,7 @@ class PolymarketLiveExecutor:
             from polymarket import AsyncSecureClient, RelayerApiKey
         except (ImportError, importlib.metadata.PackageNotFoundError) as exc:
             raise RuntimeError("Install requirements-live-sdk.txt (CLOB V2)") from exc
-        if version != "0.10.0":
+        if version != "0.17.0":
             raise RuntimeError(f"Unsupported polymarket-client version {version}")
         relayer = RelayerApiKey(
             key=self.settings.relayer_api_key,
@@ -223,9 +223,10 @@ class PolymarketLiveExecutor:
             raise RuntimeError(f"Wallet type mismatch: SDK resolved {actual}")
         self.client = client
         try:
-            await self.ensure_balance(
-                Decimal(str(self.settings.live_fixed_stake_usd)), max_age=0
-            )
+            if check_balance:
+                await self.ensure_balance(
+                    Decimal(str(self.settings.live_fixed_stake_usd)), max_age=0
+                )
         except Exception:
             await client.close()
             self.client = None

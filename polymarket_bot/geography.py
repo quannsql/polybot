@@ -4,11 +4,14 @@ import re
 from typing import Any
 
 
-# Fail-closed snapshot from the official availability page (2026-09-14).
+# API restrictions, reviewed 2026-11-09:
+# https://docs.polymarket.com/api-reference/geoblock
+# NL/IE/JP/MT/KR are frontend-only restrictions in that document. The live
+# endpoint must still explicitly return blocked=false; this is no override.
 NO_NEW_ORDERS = {
-    "AU", "BE", "BY", "BR", "BI", "CF", "CD", "CU", "DE", "ET", "FR",
-    "GB", "IE", "IR", "IQ", "IT", "JP", "KP", "LB", "LY", "MM", "MT",
-    "NI", "NL", "NZ", "PL", "RU", "SG", "SK", "SO", "SS", "SD", "SY",
+    "AR", "AU", "BE", "BY", "BR", "BI", "CF", "CD", "CU", "DE", "ET", "FR",
+    "GB", "IR", "IQ", "IT", "KP", "LB", "LY", "MM",
+    "NI", "NZ", "PL", "RU", "SG", "SK", "SO", "SS", "SD", "SY",
     "TW", "TH", "UM", "US", "VE", "YE", "ZW",
 }
 
@@ -22,6 +25,9 @@ def geographic_check(payload: Any) -> dict[str, Any]:
     if not isinstance(country, str) or not re.fullmatch("[A-Z]{2}", country):
         return {"status": "unknown", "new_order_network_check": False,
                 "reason": "missing country"}
+    if country in {'CA', 'UA'} and (not isinstance(region, str) or not region):
+        return {"status": "unknown", "new_order_network_check": False,
+                "reason": "missing region for country with regional restrictions"}
     restricted_region = (
         (country == "CA" and region in {"AB", "BC", "ON", "QC"})
         or (country == "UA" and region in {"43", "14", "09"})

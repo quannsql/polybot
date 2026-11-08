@@ -24,3 +24,4 @@ timeframe_research_*/
 *.sqlite3-wal
 *.pem
 *.key
+data/

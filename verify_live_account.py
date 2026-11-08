@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from polymarket_bot.config import Settings
+from polymarket_bot.twap_config import TwapSettings as Settings
 from polymarket_bot.geography import geographic_check
 from polymarket_bot.polymarket_api import PolymarketLiveExecutor, PolymarketPublic
 from polymarket_bot.oci_vault import load_oci_vault_env_if_configured
@@ -33,7 +33,7 @@ async def main() -> None:
     if not geo_check.get("new_order_network_check", False):
         raise RuntimeError("Polymarket geoblock did not allow new orders from this network")
     executor = PolymarketLiveExecutor(settings)
-    await executor.connect()
+    await executor.connect(check_balance=False)
     try:
         balance = await executor.client.get_balance_allowance(asset_type="COLLATERAL")
         output = {
@@ -55,6 +55,7 @@ async def main() -> None:
         print(json.dumps(output, indent=2))
     finally:
         await executor.close()
+        await public.close()
 
 
 if __name__ == "__main__":

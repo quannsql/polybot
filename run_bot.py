@@ -5,30 +5,24 @@ import asyncio
 import logging
 import os
 
-from polymarket_bot.config import Settings
-from polymarket_bot.engine import BotEngine
+from polymarket_bot.twap_config import TwapSettings as Settings
+from polymarket_bot.twap_engine import TwapBot as BotEngine
 from polymarket_bot.oci_vault import load_oci_vault_env_if_configured
 
 
 async def _run_once(engine: BotEngine) -> None:
-    if engine.executor is not None:
-        await engine.executor.connect()
     try:
+        await engine.start()
+        # Reconnect snapshots are not live observations. Build one fresh minute.
+        await asyncio.sleep(65)
         await engine.run_once()
     finally:
-        if engine.executor is not None:
-            await engine.executor.close()
-        await engine.api.close()
-        close = getattr(engine.feed, "close", None)
-        if close is not None:
-            result = close()
-            if hasattr(result, "__await__"):
-                await result
+        await engine.close()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="BTC 15m Polymarket Bot 2")
-    parser.add_argument("--once", action="store_true", help="evaluate one current market")
+    parser = argparse.ArgumentParser(description="BTC15m Chainlink TWAP60 + spot live test")
+    parser.add_argument("--once", action="store_true", help="warm feeds65s, then evaluate once; a missing opening skips the market")
     args = parser.parse_args()
     try:
         from dotenv import load_dotenv
