@@ -103,8 +103,52 @@ def test_failed_feed_check_propagates_failure(monkeypatch):
         assert args[-2:] == ['--feed-seconds', '70']
         raise entry.subprocess.CalledProcessError(1, args)
     monkeypatch.setattr(entry.subprocess, 'run', fail)
-    with pytest.raises(entry.subprocess.CalledProcessError):
+    with pytest.raises(SystemExit) as error:
         entry.main()
+    assert error.value.code == 1
+
+
+@pytest.mark.parametrize('blocked', [True, False])
+def test_netherlands_diagnostics_distinguish_endpoint_from_country_policy(blocked):
+    result = geographic_check(dict(blocked=blocked, country='NL', region='NH'))
+    assert result['endpoint_blocked'] is blocked
+    assert result['policy_blocked'] is False
+    assert result['new_order_network_check'] is (not blocked)
+    assert result['reason'] == ('geoblock_endpoint_blocked' if blocked else 'allowed_by_endpoint_and_api_policy')
+
+
+@pytest.mark.parametrize('blocked', [True, False])
+def test_public_probe_exposes_geoblock_and_commit_without_preparing_account(monkeypatch, capsys, blocked):
+    import argparse
+    import asyncio
+    import json
+    import verify_twap_runtime as verify
+    class Public:
+        server_clock_offset_ms = 0
+        def __init__(self, settings):
+            pass
+        async def sync_clock(self):
+            pass
+        async def market_record(self, start):
+            return dict(parsed=dict(slug='test', raw={}, resolution_source='chainlink'), fee={}, tick='.01')
+        async def geoblock(self):
+            return dict(blocked=blocked, country='NL', region='NH')
+        async def close(self):
+            pass
+    monkeypatch.setenv('RAILWAY_GIT_COMMIT_SHA', 'test-commit')
+    monkeypatch.setattr(verify, 'TwapPublic', Public)
+    monkeypatch.setattr(verify, 'PolymarketLiveExecutor', lambda *a: pytest.fail('public probe must not prepare account'))
+    args = argparse.Namespace(public_only=True)
+    if blocked:
+        with pytest.raises(RuntimeError, match='geography'):
+            asyncio.run(verify.check(args))
+    else:
+        asyncio.run(verify.check(args))
+    report = json.loads(capsys.readouterr().out)
+    assert report['order_submitted'] is False
+    assert report['deployment_commit'] == 'test-commit'
+    assert report['geography']['endpoint_blocked'] is blocked
+    assert report['geography']['policy_blocked'] is False
 
 
 def test_secrets_are_not_part_of_docker_context():

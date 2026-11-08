@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import importlib.metadata
 import json
+import os
 import time
 
 from polymarket_bot.geography import geographic_check
@@ -51,6 +52,7 @@ async def check(args):
         except Exception as error:
             geo = dict(status='unavailable',new_order_network_check=False,error_type=type(error).__name__)
         output = dict(check_only=True,order_submitted=False,strategy=STRATEGY,
+            deployment_commit=os.getenv('RAILWAY_GIT_COMMIT_SHA'),
             market_slug=record['parsed']['slug'],market_version=record['parsed']['raw'].get('version','v1'),
             settlement_source=record['parsed']['resolution_source'],twap_lookback_seconds=60,
             fee=record['fee'],tick=str(record['tick']),clock_offset_ms=api.server_clock_offset_ms,

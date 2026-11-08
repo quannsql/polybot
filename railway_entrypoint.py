@@ -45,7 +45,12 @@ def main():
     if action in {'probe', 'check'}:
         args = ['--public-only'] if action == 'probe' else ['--feed-seconds', '70']
         print(f'Railway {action}: no BUY/SELL orders; exits after verification', flush=True)
-        subprocess.run([sys.executable, '-B', 'verify_twap_runtime.py', *args], check=True)
+        try:
+            subprocess.run([sys.executable, '-B', 'verify_twap_runtime.py', *args], check=True)
+        except subprocess.CalledProcessError as error:
+            print(f'Railway {action} failed (exit {error.returncode}). Read the geography endpoint_blocked/policy_blocked fields above. '
+                  'For probe/check, set Restart Policy to Never to avoid repeated failed probes.', flush=True)
+            raise SystemExit(error.returncode if error.returncode > 0 else 1) from None
     else:
         # Replace PID1 so the existing engine receives Railway SIGTERM directly.
         os.execv(sys.executable, [sys.executable, '-B', 'run_bot.py'])

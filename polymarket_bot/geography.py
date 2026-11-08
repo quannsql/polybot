@@ -32,11 +32,17 @@ def geographic_check(payload: Any) -> dict[str, Any]:
         (country == "CA" and region in {"AB", "BC", "ON", "QC"})
         or (country == "UA" and region in {"43", "14", "09"})
     )
-    blocked = payload["blocked"] or country in NO_NEW_ORDERS or restricted_region
+    policy_blocked = country in NO_NEW_ORDERS or restricted_region
+    blocked = payload["blocked"] or policy_blocked
     return {
         "status": "blocked_or_close_only" if blocked else "network_check_passed",
         "country": country,
         "region": region,
+        "endpoint_blocked": payload["blocked"],
+        "policy_blocked": policy_blocked,
+        "policy_reviewed_at": "2026-11-09",
+        "reason": ("geoblock_endpoint_blocked" if payload["blocked"] else
+                   "published_api_restriction" if policy_blocked else "allowed_by_endpoint_and_api_policy"),
         "new_order_network_check": not blocked,
         "note": "Network check is not user/account/legal eligibility.",
     }

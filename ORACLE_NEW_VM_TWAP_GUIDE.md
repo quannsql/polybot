@@ -210,7 +210,7 @@ scp -i "$KeyPath" 'D:\polybot\data\releases\polybot-twap-live-20261109.tar.gz.sh
 SHA256 đã kiểm tra trên PC:
 
 ```text
-05250af8d67f8340f5bf633f2055ba3fe4b56c842f3623dd1873c0e4e2b75b57
+60fb634db73e44dd0074eea3aa32dd377a1494c8ed8177af370c731cc866e06f
 ```
 
 Trở lại **SSH VM mới**:

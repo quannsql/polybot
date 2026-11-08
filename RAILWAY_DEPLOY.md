@@ -14,7 +14,8 @@ Không cần SSH key Ubuntu. Key ví chỉ thêm tại Variables của service R
 4. Region: **EU West / Amsterdam**, ID `europe-west4-drams3a`.
 5. Replicas: **1**. Tắt Serverless/App Sleeping. Không đặt Cron Schedule.
 6. Không tạo public domain/port hoặc HTTP healthcheck: đây là background worker.
-7. Restart Policy: **On Failure**, tối đa3 retries trong đợt kiểm tra.
+7. Restart Policy: **Never** trong giai đoạn probe/check để không lặp lại các
+   lần kiểm tra thất bại. Khi run bot, dùng chính sách phục hồi ở mục4.
 8. Variables → Raw Editor: dán phần không secret từ `.env.railway.example`.
    Giai đoạn này chỉ cần `POLYMARKET_RAILWAY_ACTION=probe`; đó cũng là mặc định.
 9. Deploy staged changes; đọc Deploy Logs.
@@ -28,6 +29,18 @@ Nếu `blocked=true`, không có phản hồi hợp lệ, hoặc lỗi network: 
 IP egress thực tế có thể khác suy đoán từ tên region, nên cần kết quả từ container.
 Chưa tạo deployment Railway từ môi trường phát triển; kiểm tra này phải chạy
 trong service của bạn.
+
+### Nếu log báo blocked_or_close_only ở Amsterdam
+
+`geography.endpoint_blocked` là cờ `blocked` gốc từ Polymarket;
+`geography.policy_blocked` là quyết định từ bảng quy định API trong code.
+`deployment_commit` cho biết commit Railway đang chạy nếu được platform cấp.
+Với NL trên bản này, `policy_blocked=false`. Nếu `endpoint_blocked=true`,
+endpoint thực tế đang từ chối IP, dù tài liệu có phân loại frontend-only.
+Bot giữ trạng thái không giao dịch; cần Polymarket xác nhận/sửa phân loại IP
+trước khi dùng region này cho lệnh mới. Không dùng endpoint CLOB làm cách bỏ qua
+quyết định geography. Nếu bản deployment không có các trường mới, redeploy
+commit mới nhất của branch `codex/twap-railway`, không chỉ restart image cũ.
 
 ## 2. Quy định địa lý đã áp dụng
 
