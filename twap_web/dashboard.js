@@ -2,9 +2,9 @@
 
 const $ = id => document.getElementById(id);
 const zone = 'Asia/Ho_Chi_Minh';
-const timeFormat = new Intl.DateTimeFormat('vi-VN', {timeZone: zone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'});
-const shortTime = new Intl.DateTimeFormat('vi-VN', {timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
-const dateFormat = new Intl.DateTimeFormat('vi-VN', {timeZone: zone, day: '2-digit', month: '2-digit'});
+const timeFormat = new Intl.DateTimeFormat('en-US', {timeZone: zone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'});
+const shortTime = new Intl.DateTimeFormat('en-US', {timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
+const dateFormat = new Intl.DateTimeFormat('en-US', {timeZone: zone, month: 'short', day: '2-digit'});
 const usd = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', minimumFractionDigits: 2});
 const orderPrice = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 4});
 const price = value => Number.isFinite(value) ? usd.format(value) : '—';
@@ -12,36 +12,36 @@ const time = value => Number.isFinite(value) ? timeFormat.format(value) : '—';
 const colors = {twap: '#66edc3', spot: '#78aaff'};
 const pending = new Set(['reserved', 'submitted', 'ambiguous']);
 const orderStates = {
-  reserved: ['Giữ lượt thử', 'warn'], submitted: ['Đã gửi', 'blue'], ambiguous: ['Cần đối soát', 'warn'],
-  open: ['Đang mở', 'good'], resolved: ['Đã chốt', 'blue'], rejected: ['Bị từ chối', 'bad'],
-  aborted_before_submit: ['Dừng trước gửi', 'muted'], unknown: ['Chưa xác định', 'muted'],
+  reserved: ['Reserved', 'warn'], submitted: ['Submitted', 'blue'], ambiguous: ['Needs review', 'warn'],
+  open: ['Open', 'good'], resolved: ['Resolved', 'blue'], rejected: ['Rejected', 'bad'],
+  aborted_before_submit: ['Aborted before submit', 'muted'], unknown: ['Unknown', 'muted'],
 };
 const eventLabels = {
-  twap_started: ['Khởi động bot', 'system'], polygon_rpc_ready: ['Đã kiểm tra approvals Polygon', 'system'],
-  opening_recorded: ['Ghi nhận TWAP mở phiên', 'system'], opening_conflict: ['Dữ liệu opening mâu thuẫn', 'attention'],
-  oracle_snapshot_or_recovery: ['Đồng bộ lại luồng Chainlink', 'system'], oracle_wrong_source_or_window: ['Nguồn hoặc cửa sổ oracle không hợp lệ', 'attention'],
-  oracle_client_queue_drop: ['Luồng oracle bị hụt dữ liệu', 'attention'], oracle_stream_disconnected: ['Mất kết nối Chainlink', 'attention'],
-  legacy_imported: ['Đã nạp trạng thái cũ', 'system'], twap_frozen_signal: ['Chốt tín hiệu TWAP', 'order'],
-  twap_signal_skip: ['Bỏ qua tín hiệu', 'skip'], twap_budget_skip: ['Giới hạn giao dịch', 'skip'],
-  twap_entry_skip: ['Bỏ qua điểm vào', 'skip'], twap_recheck_skip: ['Kiểm tra lại tín hiệu không đạt', 'skip'],
-  twap_final_signal_or_deadline_skip: ['Dừng trước thời điểm gửi', 'skip'], twap_market_unavailable: ['Tạm thiếu dữ liệu market', 'attention'],
-  twap_live_intent: ['Ghi nhận lượt thử lệnh', 'order'], twap_ambiguous_post: ['Lệnh cần đối soát', 'attention'],
-  twap_order_result: ['Nhận phản hồi lệnh', 'order'], twap_fill_awaiting_reconciliation: ['Chờ xác nhận khớp lệnh', 'attention'],
-  twap_resolved: ['Market đã phân giải', 'order'], twap_redeemed: ['Đã nhận tiền vị thế', 'order'],
-  twap_redeem_needs_review: ['Cần đối soát thu hồi vị thế', 'attention'], twap_tick_error: ['Lỗi vòng theo dõi', 'attention'],
-  twap_paper_candidate: ['Tín hiệu paper', 'system'],
+  twap_started: ['Bot started', 'system'], polygon_rpc_ready: ['Polygon approvals checked', 'system'],
+  opening_recorded: ['Market opening TWAP recorded', 'system'], opening_conflict: ['Conflicting opening data', 'attention'],
+  oracle_snapshot_or_recovery: ['Chainlink feed resynchronized', 'system'], oracle_wrong_source_or_window: ['Invalid oracle source or window', 'attention'],
+  oracle_client_queue_drop: ['Oracle updates were dropped', 'attention'], oracle_stream_disconnected: ['Chainlink feed disconnected', 'attention'],
+  legacy_imported: ['Legacy state imported', 'system'], twap_frozen_signal: ['TWAP signal locked', 'order'],
+  twap_signal_skip: ['Signal skipped', 'skip'], twap_budget_skip: ['Trading limit reached', 'skip'],
+  twap_entry_skip: ['Entry skipped', 'skip'], twap_recheck_skip: ['Signal recheck failed', 'skip'],
+  twap_final_signal_or_deadline_skip: ['Stopped before order submission', 'skip'], twap_market_unavailable: ['Market data temporarily unavailable', 'attention'],
+  twap_live_intent: ['Order attempt recorded', 'order'], twap_ambiguous_post: ['Order needs reconciliation', 'attention'],
+  twap_order_result: ['Order response received', 'order'], twap_fill_awaiting_reconciliation: ['Awaiting fill confirmation', 'attention'],
+  twap_resolved: ['Market resolved', 'order'], twap_redeemed: ['Position redeemed', 'order'],
+  twap_redeem_needs_review: ['Redemption needs review', 'attention'], twap_tick_error: ['Monitoring loop error', 'attention'],
+  twap_paper_candidate: ['Paper-trading candidate', 'system'],
 };
 const reasons = {
-  opening_missing_late_or_invalid: 'Thiếu opening hợp lệ', oracle_warmup_gap_or_conflict: 'Luồng oracle đang làm ấm hoặc thiếu dữ liệu',
-  oracle_stale_or_missing: 'Giá oracle đã cũ hoặc bị thiếu', twap_lead_below_5bp: 'Chênh TWAP dưới 5 bp',
-  spot_not_supporting_twap: 'Spot chưa củng cố hướng TWAP', direction_changed_before_submit: 'Đổi hướng trước khi gửi',
-  reference_missing_stale_or_below_085: 'Giá tham chiếu thiếu, cũ hoặc dưới 0,85',
-  reference_plus_1c_ge_one: 'Giá tham chiếu cộng 1 cent chạm 1 USD',
-  ask_above_frozen_reference_cap: 'Giá ask vượt giá trần', stale_book_or_slow_request: 'Sổ lệnh cũ hoặc phản hồi chậm',
-  insufficient_haircut_depth_inside_cap: 'Thiếu độ sâu trong giá trần', winning_margin_too_small: 'Biên lợi nhuận quá thấp',
-  lifetime_submission_limit: 'Đã hết lượt thử của đợt chạy', pending_or_unresolved_position: 'Còn lệnh hoặc vị thế cần xử lý',
-  legacy_attempt_needs_reconciliation: 'Còn lệnh cũ cần đối soát', daily_loss_stop_utc: 'Đã dừng mua theo giới hạn lỗ trong ngày UTC',
-  network_geoblock_rejected: 'Kiểm tra geography không đạt', market_not_accepting_orders: 'Market không nhận lệnh',
+  opening_missing_late_or_invalid: 'Opening TWAP missing, late or invalid', oracle_warmup_gap_or_conflict: 'Oracle feed warming up or missing data',
+  oracle_stale_or_missing: 'Oracle price is stale or missing', twap_lead_below_5bp: 'TWAP lead is below 5 bp',
+  spot_not_supporting_twap: 'Spot does not confirm the TWAP direction', direction_changed_before_submit: 'Direction changed before submission',
+  reference_missing_stale_or_below_085: 'Reference price is missing, stale or below 0.85',
+  reference_plus_1c_ge_one: 'Reference plus one cent reaches 1.00',
+  ask_above_frozen_reference_cap: 'Best ask exceeds the price cap', stale_book_or_slow_request: 'Order book is stale or request is slow',
+  insufficient_haircut_depth_inside_cap: 'Insufficient depth inside the price cap', winning_margin_too_small: 'Potential winning margin is too small',
+  lifetime_submission_limit: 'Lifetime submission limit reached', pending_or_unresolved_position: 'An order or position is unresolved',
+  legacy_attempt_needs_reconciliation: 'A legacy order needs reconciliation', daily_loss_stop_utc: 'Daily UTC loss stop is active',
+  network_geoblock_rejected: 'Geographic eligibility check failed', market_not_accepting_orders: 'Market is not accepting orders',
 };
 
 let data = null;
@@ -60,24 +60,33 @@ function renderOverview() {
   const heartbeat = data.heartbeat;
   const recent = heartbeat && heartbeat.age_seconds <= 130;
   const alive = recent && heartbeat.clock_ok;
-  if (!heartbeat) setStatus('Chờ heartbeat', 'muted');
-  else if (!recent) setStatus('Heartbeat đã cũ', 'warn');
-  else if (!alive) setStatus('Clock cần kiểm tra', 'warn');
-  else setStatus('Bot đang chạy', 'good');
+  if (!heartbeat) setStatus('Waiting for heartbeat', 'muted');
+  else if (!recent) setStatus('Heartbeat is stale', 'warn');
+  else if (!alive) setStatus('Clock needs attention', 'warn');
+  else setStatus('Bot online', 'good');
 
   $('attempts').textContent = totals ? `${totals.attempts} / ${data.limits.max_orders}` : '—';
-  $('attempt-note').textContent = totals?.attempts >= data.limits.max_orders ? 'Đã dùng hết lượt thử' : 'Lượt thử ghi trong journal';
+  $('attempt-note').textContent = totals?.attempts >= data.limits.max_orders ? 'Lifetime limit reached' : 'Lifetime submission limit';
   $('positions').textContent = totals?.open_positions ?? '—';
-  $('position-note').textContent = totals ? `${totals.pending} chờ đối soát · ${totals.legacy_pending} lệnh cũ` : 'Theo trạng thái trong journal';
-  $('results').textContent = totals ? `${totals.wins} / ${totals.losses}` : '—';
+  $('position-note').textContent = totals ? `${totals.pending} pending · ${totals.legacy_pending} legacy` : 'From the bot journal';
   const settled = totals ? totals.wins + totals.losses : 0;
-  $('result-note').textContent = settled ? `Thắng / thua · ${Math.round(100 * totals.wins / settled)}% thắng` : 'Thắng / thua đã xác nhận';
+  $('winrate').textContent = settled ? `${(100 * totals.wins / settled).toFixed(1)}%` : '—';
+  $('result-note').textContent = settled ? `${totals.wins} wins · ${totals.losses} losses · ${settled} resolved` : 'No resolved markets yet';
   const count = recent && heartbeat.feed_connected ? Number(heartbeat.twap_fresh) + Number(heartbeat.spot_fresh) : 0;
   $('feeds').textContent = recent ? `${count} / 2` : '—';
-  $('feed-note').textContent = recent ? `TWAP ${heartbeat.twap_fresh ? 'mới' : 'đang chờ'} · Spot ${heartbeat.spot_fresh ? 'mới' : 'đang chờ'}` : 'Theo heartbeat gần nhất';
-  $('clock-status').textContent = recent ? (heartbeat.clock_ok ? 'Đồng bộ' : 'Lệch giờ') : '—';
+  $('feed-note').textContent = recent ? `TWAP ${heartbeat.twap_fresh ? 'fresh' : 'stale'} · Spot ${heartbeat.spot_fresh ? 'fresh' : 'stale'}` : 'Based on the latest heartbeat';
+  $('clock-status').textContent = recent ? (heartbeat.clock_ok ? 'Synced' : 'Out of sync') : '—';
   $('clock-status').className = recent ? (alive ? 'text-good' : 'text-warn') : '';
   $('heartbeat-time').textContent = time(heartbeat?.at);
+
+  const account = data.account;
+  $('balance').textContent = account ? price(account.balance_usd) : '—';
+  $('account-note').textContent = account ?
+    (account.age_seconds <= 120 ? `pUSD · updated ${time(account.at)} · ${account.age_seconds}s ago` : `Stale snapshot · ${account.age_seconds}s ago`) :
+    (data.journal.state === 'ready' ? 'Waiting for a live CLOB balance snapshot' : 'Balance unavailable');
+  const wallet = data.journal.wallet;
+  $('wallet').textContent = wallet ? `Wallet · ${wallet.slice(0, 6)}…${wallet.slice(-4)}` : 'Wallet · not bound';
+  $('wallet').title = wallet ?? '';
 
   const latestTwap = data.prices.twap.at(-1)?.[1];
   $('twap-price').textContent = price(latestTwap);
@@ -88,10 +97,10 @@ function renderOverview() {
   const lead = usable && data.journal.opening > 0 ? 10000 * (latestTwap / data.journal.opening - 1) : null;
   $('lead').textContent = lead === null ? '—' : `${lead >= 0 ? '+' : ''}${lead.toFixed(2)} bp`;
   $('lead').className = lead === null ? '' : (lead >= 0 ? 'text-good' : 'text-bad');
-  $('last-updated').textContent = `Cập nhật ${time(data.now_ms)} · UTC+7`;
+  $('last-updated').textContent = `Updated ${time(data.now_ms)} · UTC+7`;
   const notice = $('notice');
   notice.hidden = data.journal.state === 'ready';
-  notice.textContent = data.journal.state === 'missing' ? 'Chưa tìm thấy journal của bot trong volume.' : 'Tạm thời chưa đọc được journal. Giá và nhật ký vẫn có thể cập nhật.';
+  notice.textContent = data.journal.state === 'missing' ? 'The bot journal was not found in the mounted volume.' : 'The journal is temporarily unavailable. Prices and activity may still update.';
 }
 
 function updateClock() {
@@ -106,11 +115,11 @@ function updateClock() {
   link.hidden = false;
   if (now >= market.end_ms) {
     $('countdown').textContent = '--:--';
-    $('countdown-label').textContent = 'Chờ dữ liệu phiên mới';
+    $('countdown-label').textContent = 'Waiting for the next market';
     return;
   }
-  const phase = now < market.entry_ms ? ['Đến cửa sổ xét lệnh', market.entry_ms] :
-    now <= market.entry_end_ms ? ['Cửa sổ xét lệnh đang mở', market.entry_end_ms] : ['Đến lúc đóng phiên', market.end_ms];
+  const phase = now < market.entry_ms ? ['Until entry window', market.entry_ms] :
+    now <= market.entry_end_ms ? ['Entry window is open', market.entry_end_ms] : ['Until market close', market.end_ms];
   const seconds = Math.max(0, Math.ceil((phase[1] - now) / 1000));
   $('countdown').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   $('countdown-label').textContent = phase[0];
@@ -229,16 +238,41 @@ function renderOrders() {
     } else add('—');
     add(order.side ? order.side.toUpperCase() : '—', order.side === 'up' ? 'text-good' : order.side === 'down' ? 'text-warn' : '');
     add(price(order.budget), 'mono');
+    add(Number.isFinite(order.shares) ? order.shares.toFixed(2) : '—', 'mono');
+    add(Number.isFinite(order.notional) ? price(order.notional) : '—', 'mono');
+    add(Number.isFinite(order.estimated_fee) ? price(order.estimated_fee) : '—', 'mono');
+    add(Number.isFinite(order.max_cost) ? price(order.max_cost) : '—', 'mono');
     add(Number.isFinite(order.cap) ? orderPrice.format(order.cap) : '—', 'mono');
     add(badge(...orderStates[order.status]));
-    const outcome = order.status === 'resolved' ? (order.won === 1 ? 'Thắng' : order.won === 0 ? 'Thua' : '—') : '—';
-    add(outcome, outcome === 'Thắng' ? 'text-good' : outcome === 'Thua' ? 'text-bad' : '');
+    const outcome = order.status === 'resolved' ? (order.won === 1 ? 'Win' : order.won === 0 ? 'Loss' : '—') : '—';
+    add(outcome, outcome === 'Win' ? 'text-good' : outcome === 'Loss' ? 'text-bad' : '');
+    const redemption = order.redeem_status === 'confirmed' ? 'Redeemed' :
+      order.redeem_status === 'started' ? 'In progress' :
+      order.redeem_status === 'ambiguous_check_wallet' ? 'Review needed' :
+      order.redeem_status === 'zero_token_balance_or_already_redeemed' ? 'No balance / done' :
+      order.redeem_status === 'not_requested' ? 'Not requested' : order.redeem_status;
+    add(redemption, order.redeem_status === 'confirmed' ? 'text-good' : order.redeem_status === 'ambiguous_check_wallet' ? 'text-warn' : '');
+    const detail = document.createElement('details');
+    detail.className = 'order-detail';
+    const summary = document.createElement('summary');
+    summary.textContent = 'View';
+    detail.append(summary);
+    const quote = document.createElement('span');
+    quote.textContent = `Reference ${Number.isFinite(order.reference_price) ? orderPrice.format(order.reference_price) : '—'}`;
+    const entry = document.createElement('span');
+    entry.textContent = `Signed average ${Number.isFinite(order.notional) && Number.isFinite(order.shares) && order.shares > 0 ? orderPrice.format(order.notional / order.shares) : '—'} per share`;
+    const book = document.createElement('span');
+    book.textContent = `Final bid / ask ${Number.isFinite(order.best_bid) ? orderPrice.format(order.best_bid) : '—'} / ${Number.isFinite(order.best_ask) ? orderPrice.format(order.best_ask) : '—'}`;
+    const settledAt = document.createElement('span');
+    settledAt.textContent = `Resolved ${Number.isFinite(order.settled_ms) ? `${dateFormat.format(order.settled_ms)} ${time(order.settled_ms)} UTC+7` : '—'}`;
+    detail.append(quote, entry, book, settledAt);
+    add(detail);
     body.append(row);
   }
   const empty = $('orders-empty');
   empty.hidden = orders.length > 0;
-  empty.querySelector('strong').textContent = data.journal.state !== 'ready' ? 'Journal chưa sẵn sàng' : all.length ? 'Không có lệnh phù hợp' : 'Chưa có lượt thử lệnh';
-  empty.querySelector('span').textContent = data.journal.state !== 'ready' ? 'Kiểm tra volume dữ liệu và trạng thái bot.' : all.length ? 'Thử đổi bộ lọc hoặc từ khóa.' : 'Lịch sử sẽ xuất hiện khi bot ghi nhận tín hiệu đủ điều kiện.';
+  empty.querySelector('strong').textContent = data.journal.state !== 'ready' ? 'Journal is not ready' : all.length ? 'No matching orders' : 'No order attempts yet';
+  empty.querySelector('span').textContent = data.journal.state !== 'ready' ? 'Check the data volume and bot status.' : all.length ? 'Try another filter or search term.' : 'Orders appear when the bot records an eligible signal.';
 }
 
 function renderEvents() {
@@ -262,7 +296,7 @@ function renderEvents() {
     detail.append(title);
     if (event.reason || event.won !== null) {
       const context = document.createElement('span');
-      context.textContent = event.reason ? (reasons[event.reason] ?? event.reason) : (event.won ? 'Thắng' : 'Thua');
+      context.textContent = event.reason ? (reasons[event.reason] ?? event.reason) : (event.won ? 'Win' : 'Loss');
       detail.append(context);
     }
     const market = document.createElement('span');
@@ -271,7 +305,7 @@ function renderEvents() {
     rows.append(item);
   }
   $('events-empty').hidden = rows.children.length > 0;
-  $('events-empty').textContent = 'Chưa có sự kiện phù hợp.';
+  $('events-empty').textContent = 'No matching activity.';
 }
 
 async function refresh() {
@@ -280,14 +314,15 @@ async function refresh() {
   $('refresh').disabled = true;
   try {
     const response = await fetch('/api/status', {cache:'no-store', signal:AbortSignal.timeout(5000)});
+    if (response.status === 401) { window.location.replace('/login'); return; }
     if (!response.ok) throw new Error('Dashboard API unavailable');
     data = await response.json();
     receivedAt = performance.now();
     renderOverview(); updateClock(); renderChart(); renderOrders(); renderEvents();
   } catch {
-    setStatus('Mất kết nối', 'bad');
+    setStatus('Connection lost', 'bad');
     $('notice').hidden = false;
-    $('notice').textContent = 'Không đọc được dashboard API. Kiểm tra phiên SSH và container dashboard.';
+    $('notice').textContent = 'Dashboard API is unavailable. Check the network connection and dashboard container.';
   } finally {
     busy = false;
     $('refresh').disabled = false;
@@ -305,6 +340,9 @@ $('chart').addEventListener('pointerleave', () => {
   chartState?.cursor.setAttribute('visibility','hidden');
 });
 $('refresh').addEventListener('click', refresh);
+$('logout').addEventListener('click', async () => {
+  try { await fetch('/api/logout', {method:'POST', credentials:'same-origin', cache:'no-store'}); } finally { window.location.replace('/login'); }
+});
 $('search').addEventListener('input', renderOrders);
 $('order-filter').addEventListener('change', renderOrders);
 $('event-filter').addEventListener('change', renderEvents);

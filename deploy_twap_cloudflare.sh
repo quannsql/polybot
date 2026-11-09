@@ -5,7 +5,6 @@ DASHBOARD=polybot-twap-dashboard
 TUNNEL=polybot-twap-cloudflared
 IMAGE=cloudflare/cloudflared:latest
 PORT=8787
-ALLOWED_MAIL=cryptq111222333@gmail.com
 
 dashboard_is_ready() {
   if ! docker inspect --format '{{.State.Running}}' "$DASHBOARD" 2>/dev/null | grep -qx true; then
@@ -48,8 +47,7 @@ case "${1:-help}" in
       --log-opt max-size=2m --log-opt max-file=2 \
       "$IMAGE" tunnel --no-autoupdate \
       --url "http://127.0.0.1:${PORT}" \
-      --http-host-header 127.0.0.1 \
-      --allowed-mail "$ALLOWED_MAIL"
+      --http-host-header 127.0.0.1
     tunnel_url=''
     for _ in {1..30}; do
       tunnel_url="$(docker logs "$TUNNEL" 2>&1 | grep -Eo 'https://[-[:alnum:]]+\.trycloudflare\.com' | head -n 1 || true)"
@@ -67,7 +65,7 @@ case "${1:-help}" in
     docker inspect --format 'Running={{.State.Running}} RestartCount={{.RestartCount}}' "$TUNNEL"
     if [[ -n "$tunnel_url" ]]; then
       echo "Dashboard URL: $tunnel_url"
-      echo "Cloudflare will send a one-time PIN to ${ALLOWED_MAIL}."
+      echo 'Sign in with the dashboard password. Your browser session is saved for up to 30 days.'
     else
       echo 'cloudflared is running, but the URL did not appear within 30 seconds. Check logs with this script.' >&2
       docker logs --tail 80 "$TUNNEL"

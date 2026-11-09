@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#090f19">
+  <title>Sign in · Polybot</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/login.css">
+  <script src="/login.js" defer></script>
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-card">
+      <div class="brand"><img src="/favicon.svg" alt="" width="42" height="42"><span>Polybot</span></div>
+      <p class="eyebrow">PRIVATE TRADING MONITOR</p>
+      <h1>Welcome back</h1>
+      <p class="description">Sign in to view your read-only TWAP dashboard.</p>
+      <form id="login-form">
+        <label for="password">Dashboard password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <p id="error" class="error" role="alert" hidden></p>
+        <button id="submit" type="submit">Sign in <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="security"><span aria-hidden="true">●</span> Your browser stays signed in for up to 30 days.</p>
+    </section>
+    <footer>POLYMARKET <span>·</span> CHAINLINK TWAP 60S <span>·</span> READ ONLY</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,4 @@
+ARG BASE_IMAGE=polybot-twap:20261109
+FROM ${BASE_IMAGE}
+COPY twap_account_monitor.py ./
+CMD ["python", "-B", "twap_account_monitor.py"]

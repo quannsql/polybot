@@ -3,16 +3,23 @@ import argparse
 from contextlib import closing
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import CookieError, SimpleCookie
+import hashlib
+import hmac
 import json
 import math
 from pathlib import Path
 import re
+import secrets
 import sqlite3
 import threading
 import time
+from urllib.parse import parse_qs
 
 
 ASSETS = Path(__file__).with_name('twap_web')
+SESSION_COOKIE = 'polybot_dashboard_session'
+SESSION_SECONDS = 30 * 24 * 60 * 60
 MARKET = re.compile(r'btc-updown-15m-[0-9]{1,12}')
 ORDER_STATES = {'reserved', 'submitted', 'ambiguous', 'open', 'resolved',
                 'rejected', 'aborted_before_submit'}
@@ -99,7 +106,7 @@ def records(path, limit):
 
 
 def read_journal(path, start_ms):
-    journal = {'state': 'missing', 'orders': [], 'totals': None, 'opening': None}
+    journal = {'state': 'missing', 'orders': [], 'totals': None, 'opening': None, 'wallet': None}
     if not path.is_file():
         return journal
     try:
@@ -114,11 +121,26 @@ def read_journal(path, start_ms):
                 COUNT(CASE WHEN status='resolved' AND won=0 THEN 1 END) AS losses FROM orders''').fetchone())
             totals['legacy_pending'] = db.execute('SELECT COUNT(*) FROM legacy WHERE reconciled=0').fetchone()[0]
             opening = db.execute('SELECT value FROM openings WHERE start_ms=? AND valid=1', (start_ms,)).fetchone()
+            wallet = db.execute("SELECT value FROM meta WHERE key='wallet'").fetchone()
             orders = []
             for row in db.execute('''SELECT id,slug,created_ms,side,budget,status,won,settled_ms,
                     redeem_status,payload FROM orders ORDER BY id DESC LIMIT 200'''):
                 order = dict(row)
-                order['cap'] = number(object_json(order.pop('payload')).get('cap'))
+                payload = object_json(order.pop('payload'))
+                signed = payload.get('signed_amounts')
+                reference = payload.get('reference')
+                book = payload.get('final_book')
+                signed = signed if isinstance(signed, dict) else {}
+                reference = reference if isinstance(reference, dict) else {}
+                book = book if isinstance(book, dict) else {}
+                order['cap'] = number(payload.get('cap'))
+                order['shares'] = number(signed.get('shares'))
+                order['notional'] = number(signed.get('notional'))
+                order['estimated_fee'] = number(signed.get('estimated_fee'))
+                order['max_cost'] = number(signed.get('max_cost_under_checked_fee'))
+                order['reference_price'] = number(reference.get('price'))
+                order['best_ask'] = number(book.get('best_ask'))
+                order['best_bid'] = number(book.get('best_bid'))
                 order['slug'] = market_slug(order['slug'])
                 order['budget'] = number(order['budget'])
                 order['side'] = order['side'] if order['side'] in {'up', 'down'} else None
@@ -126,7 +148,8 @@ def read_journal(path, start_ms):
                 order['redeem_status'] = order['redeem_status'] if order['redeem_status'] in REDEEM_STATES else 'unknown'
                 orders.append(order)
             return {'state': 'ready', 'orders': orders, 'totals': totals,
-                    'opening': number(opening['value']) if opening else None}
+                    'opening': number(opening['value']) if opening else None,
+                    'wallet': wallet['value'] if wallet and re.fullmatch(r'0x[0-9a-fA-F]{40}', wallet['value']) else None}
     except (sqlite3.Error, OSError):
         journal['state'] = 'unavailable'
         return journal
@@ -154,6 +177,25 @@ def read_decisions(path, now_ms):
     return heartbeat, list(reversed(events[-80:]))
 
 
+def read_account(path, now_ms):
+    try:
+        if path.stat().st_size > 8192:
+            return None
+        record = object_json(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeError):
+        return None
+    payload = record.get('payload')
+    at = timestamp(record.get('timestamp'))
+    if (record.get('event') != 'twap_account_snapshot' or not isinstance(payload, dict)
+            or at is None or at > now_ms + 1000 or payload.get('currency') != 'pUSD'):
+        return None
+    balance = number(payload.get('balance_usd'))
+    if balance is None or balance < 0:
+        return None
+    return {'balance_usd': balance, 'currency': 'pUSD', 'at': at,
+            'age_seconds': max(0, (now_ms - at) // 1000)}
+
+
 def read_prices(path, now_ms):
     buckets = {'twap': {}, 'spot': {}}
     cutoff = now_ms - 30 * 60 * 1000
@@ -174,11 +216,12 @@ def read_prices(path, now_ms):
     return {kind: sorted(points.values()) for kind, points in buckets.items()}
 
 
-def snapshot(db_path, decisions, oracle, max_orders, entry_end_seconds, now_ms=None):
+def snapshot(db_path, decisions, oracle, max_orders, entry_end_seconds, now_ms=None, account_path=None):
     now_ms = time.time_ns() // 1_000_000 if now_ms is None else now_ms
     start_ms = now_ms // 900000 * 900000
     heartbeat, events = read_decisions(decisions, now_ms)
-    return {'now_ms': now_ms, 'heartbeat': heartbeat, 'events': events,
+    account = read_account(account_path, now_ms) if account_path else None
+    return {'now_ms': now_ms, 'heartbeat': heartbeat, 'account': account, 'events': events,
             'journal': read_journal(db_path, start_ms), 'prices': read_prices(oracle, now_ms),
             'limits': {'max_orders': max_orders},
             'market': {'start_ms': start_ms, 'entry_ms': start_ms + 840000,
@@ -187,8 +230,35 @@ def snapshot(db_path, decisions, oracle, max_orders, entry_end_seconds, now_ms=N
 
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.headers.get('Host', '').split(':', 1)[0] not in {'127.0.0.1', 'localhost'}:
+        if not self._valid_host():
             self.send_error(403)
+            return
+        if self.path == '/login':
+            self._send_asset('login.html', 'text/html')
+            return
+        public_assets = {'/login.css': ('login.css', 'text/css'),
+                         '/login.js': ('login.js', 'text/javascript'),
+                         '/favicon.svg': ('favicon.svg', 'image/svg+xml')}
+        if self.path in public_assets:
+            filename, content_type = public_assets[self.path]
+            self._send_asset(filename, content_type)
+            return
+        if self.path == '/health':
+            self.send_content(b'ok', 'text/plain')
+            return
+        if not self._authenticated():
+            if self.path.startswith('/api/'):
+                body = b'{"ok":false,"error":"Sign in"}'
+                self.send_response(401)
+                self._send_headers('application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.send_response(303)
+            self.send_header('Location', '/login')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
             return
         if self.path == '/api/status':
             self.send_content(self.server.status_json(), 'application/json')
@@ -198,20 +268,109 @@ class DashboardHandler(BaseHTTPRequestHandler):
                   '/favicon.svg': ('favicon.svg', 'image/svg+xml')}
         if self.path in assets:
             filename, content_type = assets[self.path]
-            self.send_content((ASSETS / filename).read_bytes(), content_type)
-        elif self.path == '/health':
-            self.send_content(b'ok', 'text/plain')
+            self._send_asset(filename, content_type)
         else:
             self.send_error(404)
 
-    def send_content(self, data, content_type):
+    def do_POST(self):
+        if not self._valid_host():
+            self.send_error(403)
+            return
+        if self.path == '/api/login':
+            self._login()
+        elif self.path == '/api/logout':
+            if not self._authenticated():
+                self.send_error(401)
+                return
+            self.send_response(200)
+            self._send_headers('application/json')
+            self.send_header('Content-Length', '11')
+            self.send_header('Set-Cookie', self._cookie('', max_age=0))
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+        else:
+            self.send_error(404)
+
+    def _valid_host(self):
+        return self.headers.get('Host', '').split(':', 1)[0] in {'127.0.0.1', 'localhost'}
+
+    def _send_asset(self, filename, content_type):
+        try:
+            body = (ASSETS / filename).read_bytes()
+        except OSError:
+            self.send_error(404)
+            return
+        self.send_content(body, content_type)
+
+    def _token(self, issued, nonce):
+        body = f'{issued}.{nonce}'
+        signature = hmac.new(self.server.session_secret, body.encode(), hashlib.sha256).hexdigest()
+        return f'{body}.{signature}'
+
+    def _authenticated(self):
+        try:
+            cookies = SimpleCookie(self.headers.get('Cookie', ''))
+            token = cookies[SESSION_COOKIE].value
+            issued_raw, nonce, signature = token.split('.', 2)
+            issued = int(issued_raw)
+            age = int(time.time()) - issued
+            if not nonce or age < -60 or age > SESSION_SECONDS:
+                return False
+            expected = self._token(issued, nonce).rsplit('.', 1)[1]
+            return hmac.compare_digest(signature, expected)
+        except (CookieError, KeyError, ValueError, TypeError):
+            return False
+
+    def _cookie(self, value, max_age=SESSION_SECONDS):
+        protocol = self.headers.get('X-Forwarded-Proto', '').split(',', 1)[0].strip().lower()
+        visitor = self.headers.get('CF-Visitor', '')
+        secure = protocol == 'https' or ('"scheme":"https"' in visitor.replace(' ', '').lower())
+        parts = [f'{SESSION_COOKIE}={value}', 'Path=/', f'Max-Age={max_age}',
+                 'HttpOnly', 'SameSite=Lax']
+        if secure:
+            parts.append('Secure')
+        return '; '.join(parts)
+
+    def _login(self):
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if length <= 0 or length > 4096:
+                raise ValueError
+            body = self.rfile.read(length).decode('utf-8')
+            fields = parse_qs(body, keep_blank_values=True, max_num_fields=4)
+            password = fields.get('password', [''])[0]
+            supplied = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
+                self.server.password_salt, self.server.password_rounds)
+            valid = hmac.compare_digest(supplied, self.server.password_hash)
+        except (ValueError, UnicodeError, OverflowError):
+            valid = False
+        if not valid:
+            self.send_response(401)
+            self._send_headers('application/json')
+            self.send_header('Content-Length', str(len(b'{"ok":false,"error":"Invalid password"}')))
+            self.end_headers()
+            self.wfile.write(b'{"ok":false,"error":"Invalid password"}')
+            return
+        issued = int(time.time())
+        token = self._token(issued, secrets.token_urlsafe(24))
         self.send_response(200)
+        self._send_headers('application/json')
+        self.send_header('Content-Length', '11')
+        self.send_header('Set-Cookie', self._cookie(token))
+        self.end_headers()
+        self.wfile.write(b'{"ok":true}')
+
+    def _send_headers(self, content_type):
         self.send_header('Content-Type', content_type + '; charset=utf-8')
-        self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('Content-Security-Policy', "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+
+    def send_content(self, data, content_type):
+        self.send_response(200)
+        self.send_header('Content-Length', str(len(data)))
+        self._send_headers(content_type)
         self.end_headers()
         self.wfile.write(data)
 
@@ -223,6 +382,12 @@ class DashboardServer(ThreadingHTTPServer):
     def __init__(self, port, options):
         super().__init__(('127.0.0.1', port), DashboardHandler)
         self.options = options
+        self.password_salt = bytes.fromhex(Path('/run/secrets/dashboard_password_salt').read_text(encoding='ascii').strip())
+        self.password_hash = bytes.fromhex(Path('/run/secrets/dashboard_password_hash').read_text(encoding='ascii').strip())
+        self.password_rounds = int(Path('/run/secrets/dashboard_password_rounds').read_text(encoding='ascii').strip())
+        self.session_secret = bytes.fromhex(Path('/run/secrets/dashboard_session_secret').read_text(encoding='ascii').strip())
+        if len(self.password_salt) < 16 or len(self.password_hash) != 32 or len(self.session_secret) < 32 or self.password_rounds < 100_000:
+            raise RuntimeError('Dashboard auth secret files are invalid')
         self.cache_at = 0
         self.cache = b''
         self.cache_lock = threading.Lock()
@@ -240,11 +405,12 @@ def main():
     parser.add_argument('--db', type=Path, default=Path('/data/twap_state.sqlite3'))
     parser.add_argument('--decisions', type=Path, default=Path('/data/twap_decisions.jsonl'))
     parser.add_argument('--oracle', type=Path, default=Path('/data/twap_oracle.jsonl'))
+    parser.add_argument('--account', type=Path, default=Path('/data/twap_account.json'))
     parser.add_argument('--max-orders', type=int, default=5)
     parser.add_argument('--entry-end-seconds', type=int, default=845)
     parser.add_argument('--port', type=int, default=8787)
     args = parser.parse_args()
-    options = dict(db_path=args.db, decisions=args.decisions, oracle=args.oracle,
+    options = dict(db_path=args.db, decisions=args.decisions, oracle=args.oracle, account_path=args.account,
                    max_orders=args.max_orders, entry_end_seconds=args.entry_end_seconds)
     with DashboardServer(args.port, options) as server:
         print(f'TWAP dashboard listening on 127.0.0.1:{server.server_port}', flush=True)

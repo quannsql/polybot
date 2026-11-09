@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Polybot · TWAP Monitor</title>
+  <meta name="theme-color" content="#090f19">
+  <title>Polybot · Trading Monitor</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/dashboard.css">
   <script src="/dashboard.js" defer></script>
@@ -19,81 +20,83 @@
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v2"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H20v16H6.5A2.5 2.5 0 0 1 4 17.5zM4 7h16M16 13h4m-4 0a2 2 0 1 0 0 4h4v-4z"/></symbol>
   </svg>
   <header class="topbar">
     <div class="top-inner">
       <a class="brand" href="#overview"><img src="/favicon.svg" alt="" width="36" height="36"><span>Polybot</span><span class="brand-tag">TWAP MONITOR</span></a>
-      <nav aria-label="Điều hướng dashboard">
-        <a href="#overview">Tổng quan</a><a href="#orders">Lệnh</a><a href="#activity">Nhật ký</a>
-      </nav>
-      <span class="access"><svg class="icon"><use href="#i-lock"/></svg> Chỉ đọc</span>
+      <nav aria-label="Dashboard navigation"><a href="#overview">Overview</a><a href="#orders">Orders</a><a href="#activity">Activity</a></nav>
+      <div class="top-actions"><span class="access"><svg class="icon"><use href="#i-lock"/></svg> Read only</span><button type="button" class="logout" id="logout">Log out</button></div>
     </div>
   </header>
   <main id="overview" class="layout">
     <section class="intro" aria-labelledby="title">
       <div>
-        <div class="eyebrow"><span class="short-line"></span> POLYMARKET <span class="separator">/</span> BTC 15 PHÚT</div>
-        <h1 id="title">Giám sát giao dịch</h1>
-        <p>Chainlink TWAP 60 giây, lệnh và nhật ký bot trong một màn hình.</p>
+        <div class="eyebrow"><span class="short-line"></span> POLYMARKET <span class="separator">/</span> BTC 15 MIN</div>
+        <h1 id="title">Trading monitor</h1>
+        <p>Chainlink 60-second TWAP, account balance, orders and bot health.</p>
       </div>
       <div class="intro-actions">
-        <span class="badge status" id="bot-status" data-tone="muted"><i></i><span>Đang đọc dữ liệu</span></span>
-        <button type="button" class="button refresh" id="refresh" aria-label="Làm mới dữ liệu" title="Làm mới dữ liệu"><svg class="icon"><use href="#i-refresh"/></svg></button>
-        <span id="last-updated" class="last-updated">Giờ Việt Nam · UTC+7</span>
+        <span class="badge status" id="bot-status" data-tone="muted"><i></i><span>Loading data</span></span>
+        <button type="button" class="button refresh" id="refresh" aria-label="Refresh data" title="Refresh data"><svg class="icon"><use href="#i-refresh"/></svg></button>
+        <span id="last-updated" class="last-updated">Local time · UTC+7</span>
       </div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
-    <section class="stats" aria-label="Tổng quan giao dịch">
-      <article class="tile"><div class="tile-head"><span>Lượt thử lệnh</span><span class="tile-icon blue"><svg class="icon"><use href="#i-orders"/></svg></span></div><div class="metric" id="attempts">—</div><p id="attempt-note">Theo journal của bot</p></article>
-      <article class="tile"><div class="tile-head"><span>Vị thế đang mở</span><span class="tile-icon violet"><svg class="icon"><use href="#i-position"/></svg></span></div><div class="metric" id="positions">—</div><p id="position-note">Đang đọc trạng thái lệnh</p></article>
-      <article class="tile"><div class="tile-head"><span>Kết quả phiên đã chốt</span><span class="tile-icon gold"><svg class="icon"><use href="#i-trophy"/></svg></span></div><div class="metric" id="results">—</div><p id="result-note">Thắng / thua đã xác nhận</p></article>
-      <article class="tile"><div class="tile-head"><span>Luồng Chainlink</span><span class="tile-icon teal"><svg class="icon"><use href="#i-pulse"/></svg></span></div><div class="metric" id="feeds">—</div><p id="feed-note">Theo heartbeat gần nhất</p></article>
+    <section class="stats" aria-label="Trading overview">
+      <article class="tile balance-tile"><div class="tile-head"><span>Available CLOB collateral</span><span class="tile-icon teal"><svg class="icon"><use href="#i-wallet"/></svg></span></div><div class="metric" id="balance">—</div><p id="account-note">Waiting for the first live account snapshot</p><p class="wallet-label" id="wallet">Wallet · —</p></article>
+      <article class="tile"><div class="tile-head"><span>Submissions</span><span class="tile-icon blue"><svg class="icon"><use href="#i-orders"/></svg></span></div><div class="metric" id="attempts">—</div><p id="attempt-note">Recorded in the bot journal</p></article>
+      <article class="tile"><div class="tile-head"><span>Open positions</span><span class="tile-icon violet"><svg class="icon"><use href="#i-position"/></svg></span></div><div class="metric" id="positions">—</div><p id="position-note">Reading order state</p></article>
+      <article class="tile"><div class="tile-head"><span>Win rate</span><span class="tile-icon gold"><svg class="icon"><use href="#i-trophy"/></svg></span></div><div class="metric" id="winrate">—</div><p id="result-note">Resolved wins / losses</p></article>
+      <article class="tile"><div class="tile-head"><span>Realized cash P&amp;L</span><span class="tile-icon gold">$</span></div><div class="metric metric-na" id="cash-pnl">N/A</div><p id="pnl-note">Confirmed trade and fee receipts are not in the journal</p></article>
+      <article class="tile"><div class="tile-head"><span>Oracle feeds</span><span class="tile-icon teal"><svg class="icon"><use href="#i-pulse"/></svg></span></div><div class="metric" id="feeds">—</div><p id="feed-note">Based on the latest heartbeat</p></article>
     </section>
     <div class="monitor-grid">
       <section class="panel chart-panel" aria-labelledby="chart-heading">
         <header class="panel-head"><div><p class="eyebrow">CHAINLINK ORACLE</p><h2 id="chart-heading">BTC / USD</h2></div>
-          <div class="segmented" aria-label="Khoảng thời gian biểu đồ"><button type="button" data-range="5" aria-pressed="false">5 phút</button><button type="button" data-range="15" aria-pressed="true">15 phút</button><button type="button" data-range="30" aria-pressed="false">30 phút</button></div>
+          <div class="segmented" aria-label="Chart time range"><button type="button" data-range="5" aria-pressed="false">5m</button><button type="button" data-range="15" aria-pressed="true">15m</button><button type="button" data-range="30" aria-pressed="false">30m</button></div>
         </header>
         <div class="quotes">
-          <div><span><i class="series-key twap"></i> TWAP 60 giây</span><strong id="twap-price">—</strong></div>
+          <div><span><i class="series-key twap"></i> TWAP · 60s</span><strong id="twap-price">—</strong></div>
           <div><span><i class="series-key spot"></i> Spot</span><strong id="spot-price">—</strong></div>
         </div>
         <div id="chart-wrap" class="chart-wrap">
-          <svg id="chart" role="img" aria-label="Giá TWAP và Spot BTC theo thời gian"></svg>
+          <svg id="chart" role="img" aria-label="BTC TWAP and spot prices over time"></svg>
           <div id="chart-tooltip" class="chart-tooltip" hidden></div>
-          <div id="chart-empty" class="chart-empty"><svg class="icon"><use href="#i-pulse"/></svg><strong>Đang chờ dữ liệu Chainlink</strong><span>Biểu đồ xuất hiện khi bot ghi nhận các bản cập nhật.</span></div>
+          <div id="chart-empty" class="chart-empty"><svg class="icon"><use href="#i-pulse"/></svg><strong>Waiting for Chainlink data</strong><span>The chart appears as the bot records oracle updates.</span></div>
         </div>
-        <footer class="chart-foot"><span><i class="opening-key"></i> TWAP lúc mở phiên</span><span>USD · Giờ Việt Nam</span></footer>
+        <footer class="chart-foot"><span><i class="opening-key"></i> Opening TWAP</span><span>USD · Vietnam time</span></footer>
       </section>
       <aside class="panel session" aria-labelledby="session-heading">
-        <header class="panel-head"><div><p class="eyebrow">CỬA SỔ GIAO DỊCH</p><h2 id="session-heading">Phiên BTC hiện tại</h2></div><span class="tile-icon blue"><svg class="icon"><use href="#i-clock"/></svg></span></header>
+        <header class="panel-head"><div><p class="eyebrow">TRADING WINDOW</p><h2 id="session-heading">Current BTC market</h2></div><span class="tile-icon blue"><svg class="icon"><use href="#i-clock"/></svg></span></header>
         <div class="session-time" id="market-time">—</div>
         <div class="countdown" id="countdown">--:--</div>
-        <p id="countdown-label" class="countdown-label">Đến cửa sổ xét lệnh</p>
-        <progress id="market-progress" max="900" value="0" aria-label="Tiến độ market"></progress>
-        <div class="timeline-labels"><span>Mở phiên</span><span id="entry-time">Xét lệnh</span><span>Đóng</span></div>
+        <p id="countdown-label" class="countdown-label">Until entry window</p>
+        <progress id="market-progress" max="900" value="0" aria-label="Market progress"></progress>
+        <div class="timeline-labels"><span>Open</span><span id="entry-time">Entry</span><span>Close</span></div>
         <dl class="session-details">
-          <div><dt>TWAP lúc mở</dt><dd id="opening-price">—</dd></div>
-          <div><dt>Chênh TWAP</dt><dd id="lead">—</dd></div>
-          <div><dt>Trạng thái clock</dt><dd id="clock-status">—</dd></div>
-          <div><dt>Heartbeat gần nhất</dt><dd id="heartbeat-time">—</dd></div>
+          <div><dt>Opening TWAP</dt><dd id="opening-price">—</dd></div>
+          <div><dt>TWAP lead</dt><dd id="lead">—</dd></div>
+          <div><dt>Clock status</dt><dd id="clock-status">—</dd></div>
+          <div><dt>Last heartbeat</dt><dd id="heartbeat-time">—</dd></div>
         </dl>
-        <a id="market-link" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Mở market trên Polymarket <span aria-hidden="true">↗</span></a>
+        <a id="market-link" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Open market on Polymarket <span aria-hidden="true">↗</span></a>
       </aside>
     </div>
     <section id="orders" class="panel orders" aria-labelledby="orders-heading">
-      <header class="panel-head"><div><p class="eyebrow">JOURNAL LIVE</p><h2 id="orders-heading">Lịch sử lệnh <span id="order-count" class="count-pill">—</span></h2></div>
-        <div class="table-controls"><label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" aria-label="Tìm lệnh theo ID hoặc market" placeholder="Tìm ID hoặc market"></label><select id="order-filter" aria-label="Lọc lệnh theo trạng thái"><option value="all">Mọi trạng thái</option><option value="pending">Chờ đối soát</option><option value="open">Đang mở</option><option value="resolved">Đã chốt</option><option value="rejected">Bị từ chối</option><option value="aborted_before_submit">Dừng trước khi gửi</option></select></div>
+      <header class="panel-head"><div><p class="eyebrow">LIVE JOURNAL</p><h2 id="orders-heading">Order history <span id="order-count" class="count-pill">—</span></h2></div>
+        <div class="table-controls"><label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" aria-label="Search order ID or market" placeholder="Search ID or market"></label><select id="order-filter" aria-label="Filter orders by status"><option value="all">All statuses</option><option value="pending">Pending review</option><option value="open">Open</option><option value="resolved">Resolved</option><option value="rejected">Rejected</option><option value="aborted_before_submit">Aborted before submit</option></select></div>
       </header>
-      <div class="table-wrap"><table><thead><tr><th>Lệnh</th><th>Thời điểm</th><th>Market</th><th>Hướng</th><th>Ngân sách</th><th>Giá trần</th><th>Trạng thái</th><th>Kết quả</th></tr></thead><tbody id="order-rows"></tbody></table></div>
-      <div class="empty-state" id="orders-empty"><svg class="icon"><use href="#i-orders"/></svg><strong>Đang đọc journal</strong><span>Trạng thái lệnh sẽ xuất hiện tại đây.</span></div>
+      <div class="table-wrap"><table><thead><tr><th>ID</th><th>Time</th><th>Market</th><th>Side</th><th>Budget</th><th>Shares</th><th>Signed cost</th><th>Est. fee</th><th>All-in cap</th><th>Limit</th><th>Status</th><th>Outcome</th><th>Redemption</th><th>Details</th></tr></thead><tbody id="order-rows"></tbody></table></div>
+      <p class="table-note">Signed cost and fee are estimates from the signed order. Realized P&amp;L is not verified from trade receipts in this journal.</p>
+      <div class="empty-state" id="orders-empty"><svg class="icon"><use href="#i-orders"/></svg><strong>Loading order journal</strong><span>Order states will appear here.</span></div>
     </section>
     <section id="activity" class="panel activity" aria-labelledby="activity-heading">
-      <header class="panel-head"><div><p class="eyebrow">HOẠT ĐỘNG BOT</p><h2 id="activity-heading">Nhật ký quyết định</h2></div><select id="event-filter" aria-label="Lọc nhật ký"><option value="all">Mọi sự kiện</option><option value="skip">Lý do bỏ qua</option><option value="order">Giao dịch</option><option value="attention">Cần chú ý</option></select></header>
+      <header class="panel-head"><div><p class="eyebrow">BOT ACTIVITY</p><h2 id="activity-heading">Decision log</h2></div><select id="event-filter" aria-label="Filter activity"><option value="all">All activity</option><option value="skip">Skipped signals</option><option value="order">Orders</option><option value="attention">Needs attention</option></select></header>
       <ol id="event-rows" class="events"></ol>
-      <p id="events-empty" class="events-empty">Đang đọc nhật ký.</p>
+      <p id="events-empty" class="events-empty">Loading activity.</p>
     </section>
-    <footer class="footer"><span>Polybot TWAP Monitor</span><span>SQLite · Chainlink JSONL · Cập nhật mỗi 10 giây</span></footer>
+    <footer class="footer"><span>Polybot TWAP Monitor</span><span>SQLite · Chainlink JSONL · Refreshes every 10 seconds</span></footer>
   </main>
 </body>
 </html>
