@@ -16,10 +16,21 @@ dashboard_is_ready() {
     echo 'curl is required for the local dashboard health check.' >&2
     exit 1
   fi
-  if ! curl --fail --silent --show-error -H 'Host: 127.0.0.1' "http://127.0.0.1:${PORT}/health" >/dev/null; then
-    echo 'The dashboard health check failed on loopback.' >&2
-    exit 1
-  fi
+  for _ in {1..30}; do
+    if curl --fail --silent --max-time 2 -H 'Host: 127.0.0.1' \
+      "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! docker inspect --format '{{.State.Running}}' "$DASHBOARD" 2>/dev/null | grep -qx true; then
+      echo 'The dashboard container exited before its health check passed:' >&2
+      docker logs --tail 80 "$DASHBOARD" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  echo 'The dashboard did not pass its loopback health check within 30 seconds:' >&2
+  docker logs --tail 80 "$DASHBOARD" >&2
+  exit 1
 }
 
 case "${1:-help}" in
