@@ -28,7 +28,46 @@ Script tìm volume `/data` của container `polybot-twap`, gắn vào container
 Dashboard chạy riêng và chỉ nhận các đường dẫn dữ liệu cùng giới hạn của bot.
 Bot có thể tiếp tục hoạt động trong lúc cài dashboard.
 
-## Mở từ Windows
+## Mở bằng URL trình duyệt với email OTP
+
+Cloudflare Quick Tunnel tạo URL tạm dạng `https://….trycloudflare.com` và gửi
+mã OTP tới `cryptq111222333@gmail.com` trước khi cho xem dashboard. Không cần
+tên miền hay tài khoản Cloudflare. URL đổi khi tunnel được tạo lại, ví dụ sau
+khi khởi động lại container. Cloudflare định vị Quick Tunnel cho thử nghiệm,
+không cam kết uptime.
+
+Trong SSH trên VM, cập nhật mã và khởi động tunnel:
+
+```bash
+cd ~/polybot-twap
+git pull --ff-only origin codex/twap-railway
+sudo bash deploy_twap_dashboard.sh start
+sudo bash deploy_twap_cloudflare.sh start
+```
+
+Lệnh cuối hiển thị URL `trycloudflare.com`. Mở URL đó trong trình duyệt, nhập
+`cryptq111222333@gmail.com`, rồi nhập OTP nhận qua email. Container tunnel chạy
+ở nền nên có thể đóng SSH sau khi đã lấy URL. Nếu tunnel khởi động lại, lấy URL
+mới bằng:
+
+```bash
+cd ~/polybot-twap
+sudo bash deploy_twap_cloudflare.sh status
+sudo bash deploy_twap_cloudflare.sh logs
+```
+
+Dừng URL công khai và thu hồi quyền truy cập tunnel:
+
+```bash
+sudo bash deploy_twap_cloudflare.sh stop
+```
+
+Tunnel chạy container riêng, chỉ kết nối tới dashboard trên loopback, không
+publish cổng 8787 ra mạng. Khi tunnel được tạo lại, URL thay đổi. Cloudflare
+Quick Tunnel không có bảo đảm uptime và chỉ phù hợp để thử nghiệm/theo dõi cá
+nhân. Xem [giới hạn và email OTP của Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+## Mở từ Windows qua SSH
 
 Mở cửa sổ PowerShell mới và chạy lệnh sau.
 
