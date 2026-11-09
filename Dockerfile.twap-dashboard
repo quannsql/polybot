@@ -1,0 +1,6 @@
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY twap_dashboard.py ./
+COPY twap_web/ ./twap_web/
+CMD ["python", "-B", "twap_dashboard.py"]

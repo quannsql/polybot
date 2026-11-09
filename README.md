@@ -10,6 +10,9 @@ build/check/start và quản lý state của lần chạy trước.
 
 [Chi tiết tích hợp và kiểm chứng](TWAP_LIVE_INTEGRATION.md).
 
+[Dashboard TWAP trên Oracle](TWAP_DASHBOARD.md) hiển thị biểu đồ Chainlink,
+trạng thái bot, lịch sử lệnh và nhật ký quyết định qua SSH.
+
 ## Railway từ GitHub
 
 [Hướng dẫn Railway và Variables](RAILWAY_DEPLOY.md). Dockerfile ở root tự chạy
